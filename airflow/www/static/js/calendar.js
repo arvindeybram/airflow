@@ -18,7 +18,7 @@
  */
 
 /* global calendarData, statesColors, document, window, $, d3, moment */
-import getMetaValue from './meta_value';
+import { getMetaValue } from './utils';
 
 const dagId = getMetaValue('dag_id');
 const treeUrl = getMetaValue('tree_url');
@@ -127,16 +127,6 @@ document.addEventListener('DOMContentLoaded', () => {
       .attr('width', fullWidth)
       .attr('height', fullHeight)
       .call(dayTip);
-
-    // Add the title
-    svg
-      .append('g')
-      .append('text')
-      .attr('x', fullWidth / 2)
-      .attr('y', 20)
-      .attr('text-anchor', 'middle')
-      .attr('class', 'title')
-      .text('DAG states');
 
     // Add the legend
     const legend = svg

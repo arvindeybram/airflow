@@ -22,11 +22,15 @@ AIRFLOW_SOURCES="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../" && pwd)"
 cd "${AIRFLOW_SOURCES}"
 
 # [START build]
+export AIRFLOW_VERSION=2.2.2
+export DEBIAN_VERSION="bullseye"
+
 docker build . \
-    --build-arg PYTHON_BASE_IMAGE="python:3.8-slim-buster" \
-    --build-arg AIRFLOW_VERSION="2.0.2" \
+    --pull \
+    --build-arg PYTHON_BASE_IMAGE="python:3.8-slim-${DEBIAN_VERSION}" \
+    --build-arg AIRFLOW_VERSION="${AIRFLOW_VERSION}" \
     --build-arg ADDITIONAL_AIRFLOW_EXTRAS="mssql,hdfs" \
     --build-arg ADDITIONAL_PYTHON_DEPS="oauth2client" \
-    --tag "$(basename "$0")"
+    --tag "my-pypi-extras-and-deps:0.0.1"
 # [END build]
-docker rmi --force "$(basename "$0")"
+docker rmi --force "my-pypi-extras-and-deps:0.0.1"

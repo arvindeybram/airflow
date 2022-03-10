@@ -157,44 +157,42 @@ class TestGoogleProviderProjectStructure(unittest.TestCase):
         ('cloud', 'sql_to_gcs'),
         ('cloud', 'bigquery_to_mysql'),
         ('cloud', 'cassandra_to_gcs'),
-        ('cloud', 'mssql_to_gcs'),
         ('suite', 'drive'),
         ('ads', 'ads_to_gcs'),
     }
 
-    MISSING_EXAMPLES_FOR_OPERATORS = {
-        # Deprecated operator. Ignore it.
+    # Those operators are deprecated and we do not need examples for them
+    DEPRECATED_OPERATORS = {
         'airflow.providers.google.cloud.operators.cloud_storage_transfer_service'
         '.CloudDataTransferServiceS3ToGCSOperator',
-        # Deprecated operator. Ignore it.
         'airflow.providers.google.cloud.operators.cloud_storage_transfer_service'
         '.CloudDataTransferServiceGCSToGCSOperator',
-        # Deprecated operator. Ignore it.
         'airflow.providers.google.cloud.sensors.gcs.GCSObjectsWtihPrefixExistenceSensor',
-        # Base operator. Ignore it.
-        'airflow.providers.google.cloud.operators.cloud_sql.CloudSQLBaseOperator',
-        # Deprecated operator. Ignore it
         'airflow.providers.google.cloud.operators.dataproc.DataprocSubmitHadoopJobOperator',
-        'airflow.providers.google.cloud.operators.dataproc.DataprocInstantiateInlineWorkflowTemplateOperator',
-        # Deprecated operator. Ignore it
         'airflow.providers.google.cloud.operators.dataproc.DataprocScaleClusterOperator',
-        # Base operator. Ignore it
-        'airflow.providers.google.cloud.operators.dataproc.DataprocJobBaseOperator',
-        # Deprecated operator. Ignore it
         'airflow.providers.google.cloud.operators.dataproc.DataprocSubmitSparkJobOperator',
-        # Deprecated operator. Ignore it
         'airflow.providers.google.cloud.operators.dataproc.DataprocSubmitSparkSqlJobOperator',
-        # Deprecated operator. Ignore it
         'airflow.providers.google.cloud.operators.dataproc.DataprocSubmitHiveJobOperator',
-        # Deprecated operator. Ignore it
         'airflow.providers.google.cloud.operators.dataproc.DataprocSubmitPigJobOperator',
-        # Deprecated operator. Ignore it
         'airflow.providers.google.cloud.operators.dataproc.DataprocSubmitPySparkJobOperator',
-        'airflow.providers.google.cloud.operators.mlengine.MLEngineTrainingCancelJobOperator',
-        # Deprecated operator. Ignore it
         'airflow.providers.google.cloud.operators.mlengine.MLEngineManageModelOperator',
-        # Deprecated operator. Ignore it
         'airflow.providers.google.cloud.operators.mlengine.MLEngineManageVersionOperator',
+        'airflow.providers.google.cloud.operators.dataflow.DataflowCreateJavaJobOperator',
+        'airflow.providers.google.cloud.operators.bigquery.BigQueryPatchDatasetOperator',
+        'airflow.providers.google.cloud.operators.dataflow.DataflowCreatePythonJobOperator',
+        'airflow.providers.google.cloud.operators.bigquery.BigQueryExecuteQueryOperator',
+    }
+
+    # Those operators should not have examples as they are never used standalone (they are abstract)
+    BASE_OPERATORS = {
+        'airflow.providers.google.cloud.operators.compute.ComputeEngineBaseOperator',
+        'airflow.providers.google.cloud.operators.cloud_sql.CloudSQLBaseOperator',
+        'airflow.providers.google.cloud.operators.dataproc.DataprocJobBaseOperator',
+    }
+
+    # Please at the examples to those operators at the earliest convenience :)
+    MISSING_EXAMPLES_FOR_OPERATORS = {
+        'airflow.providers.google.cloud.operators.mlengine.MLEngineTrainingCancelJobOperator',
         'airflow.providers.google.cloud.operators.dlp.CloudDLPGetStoredInfoTypeOperator',
         'airflow.providers.google.cloud.operators.dlp.CloudDLPReidentifyContentOperator',
         'airflow.providers.google.cloud.operators.dlp.CloudDLPCreateDeidentifyTemplateOperator',
@@ -215,17 +213,13 @@ class TestGoogleProviderProjectStructure(unittest.TestCase):
         'airflow.providers.google.cloud.operators.dlp.CloudDLPDeleteDeidentifyTemplateOperator',
         'airflow.providers.google.cloud.operators.dlp.CloudDLPListDLPJobsOperator',
         'airflow.providers.google.cloud.operators.dlp.CloudDLPRedactImageOperator',
-        'airflow.providers.google.cloud.operators.datastore.CloudDatastoreDeleteOperationOperator',
-        'airflow.providers.google.cloud.operators.datastore.CloudDatastoreGetOperationOperator',
-        # Base operator. Ignore it
-        'airflow.providers.google.cloud.operators.compute.ComputeEngineBaseOperator',
         'airflow.providers.google.cloud.sensors.gcs.GCSObjectUpdateSensor',
         'airflow.providers.google.cloud.sensors.gcs.GCSUploadSessionCompleteSensor',
     }
 
     def test_example_dags(self):
         operators_modules = itertools.chain(
-            *[self.find_resource_files(resource_type=d) for d in ["operators", "sensors", "transfers"]]
+            *(self.find_resource_files(resource_type=d) for d in ["operators", "sensors", "transfers"])
         )
         example_dags_files = self.find_resource_files(resource_type="example_dags")
         # Generate tuple of department and service e.g. ('marketing_platform', 'display_video')
@@ -299,7 +293,11 @@ class TestGoogleProviderProjectStructure(unittest.TestCase):
                 print("example_paths=", example_paths)
                 operators_paths = set(get_classes_from_file(f"{ROOT_FOLDER}/{filepath}"))
                 missing_operators.extend(operators_paths - example_paths)
-        assert set(missing_operators) == self.MISSING_EXAMPLES_FOR_OPERATORS
+        full_set = set()
+        full_set.update(self.MISSING_EXAMPLES_FOR_OPERATORS)
+        full_set.update(self.DEPRECATED_OPERATORS)
+        full_set.update(self.BASE_OPERATORS)
+        assert set(missing_operators) == full_set
 
     @parameterized.expand(
         itertools.product(["_system.py", "_system_helper.py"], ["operators", "sensors", "transfers"])
@@ -337,11 +335,11 @@ class TestOperatorsHooks(unittest.TestCase):
     def test_no_illegal_suffixes(self):
         illegal_suffixes = ["_operator.py", "_hook.py", "_sensor.py"]
         files = itertools.chain(
-            *[
+            *(
                 glob.glob(f"{ROOT_FOLDER}/{part}/providers/**/{resource_type}/*.py", recursive=True)
                 for resource_type in ["operators", "hooks", "sensors", "example_dags"]
                 for part in ["airflow", "tests"]
-            ]
+            )
         )
 
         invalid_files = [f for f in files if any(f.endswith(suffix) for suffix in illegal_suffixes)]

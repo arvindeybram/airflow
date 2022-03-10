@@ -32,11 +32,12 @@ revision = 'dd4ecb8fbee3'
 down_revision = 'c8ffec048a3b'
 branch_labels = None
 depends_on = None
+airflow_version = '1.10.3'
 
 
-def upgrade():  # noqa: D103
+def upgrade():
     op.add_column('dag', sa.Column('schedule_interval', sa.Text(), nullable=True))
 
 
-def downgrade():  # noqa: D103
+def downgrade():
     op.drop_column('dag', 'schedule_interval')

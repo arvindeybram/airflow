@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""task reschedule fk on cascade delete
+"""task reschedule foreign key on cascade delete
 
 Revision ID: 939bb1e647c8
 Revises: dd4ecb8fbee3
@@ -30,9 +30,10 @@ revision = '939bb1e647c8'
 down_revision = 'dd4ecb8fbee3'
 branch_labels = None
 depends_on = None
+airflow_version = '1.10.3'
 
 
-def upgrade():  # noqa: D103
+def upgrade():
     with op.batch_alter_table('task_reschedule') as batch_op:
         batch_op.drop_constraint('task_reschedule_dag_task_date_fkey', type_='foreignkey')
         batch_op.create_foreign_key(
@@ -44,7 +45,7 @@ def upgrade():  # noqa: D103
         )
 
 
-def downgrade():  # noqa: D103
+def downgrade():
     with op.batch_alter_table('task_reschedule') as batch_op:
         batch_op.drop_constraint('task_reschedule_dag_task_date_fkey', type_='foreignkey')
         batch_op.create_foreign_key(

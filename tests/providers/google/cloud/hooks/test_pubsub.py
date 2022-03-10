@@ -29,6 +29,7 @@ from googleapiclient.errors import HttpError
 from parameterized import parameterized
 
 from airflow.providers.google.cloud.hooks.pubsub import PubSubException, PubSubHook
+from airflow.providers.google.common.consts import CLIENT_INFO
 from airflow.version import version
 
 BASE_STRING = 'airflow.providers.google.common.hooks.base_google.{}'
@@ -55,7 +56,7 @@ def mock_init(
     gcp_conn_id,
     delegate_to=None,
     impersonation_chain=None,
-):  # pylint: disable=unused-argument
+):
     pass
 
 
@@ -69,38 +70,28 @@ class TestPubSubHook(unittest.TestCase):
             ReceivedMessage(
                 ack_id=str(i),
                 message={
-                    "data": f'Message {i}'.encode('utf8'),
+                    "data": f'Message {i}'.encode(),
                     "attributes": {"type": "generated message"},
                 },
             )
             for i in range(1, count + 1)
         ]
 
-    @mock.patch(
-        "airflow.providers.google.cloud.hooks.pubsub.PubSubHook.client_info", new_callable=mock.PropertyMock
-    )
     @mock.patch("airflow.providers.google.cloud.hooks.pubsub.PubSubHook._get_credentials")
     @mock.patch("airflow.providers.google.cloud.hooks.pubsub.PublisherClient")
-    def test_publisher_client_creation(self, mock_client, mock_get_creds, mock_client_info):
+    def test_publisher_client_creation(self, mock_client, mock_get_creds):
         assert self.pubsub_hook._client is None
         result = self.pubsub_hook.get_conn()
-        mock_client.assert_called_once_with(
-            credentials=mock_get_creds.return_value, client_info=mock_client_info.return_value
-        )
+        mock_client.assert_called_once_with(credentials=mock_get_creds.return_value, client_info=CLIENT_INFO)
         assert mock_client.return_value == result
         assert self.pubsub_hook._client == result
 
-    @mock.patch(
-        "airflow.providers.google.cloud.hooks.pubsub.PubSubHook.client_info", new_callable=mock.PropertyMock
-    )
     @mock.patch("airflow.providers.google.cloud.hooks.pubsub.PubSubHook._get_credentials")
     @mock.patch("airflow.providers.google.cloud.hooks.pubsub.SubscriberClient")
-    def test_subscriber_client_creation(self, mock_client, mock_get_creds, mock_client_info):
+    def test_subscriber_client_creation(self, mock_client, mock_get_creds):
         assert self.pubsub_hook._client is None
         result = self.pubsub_hook.subscriber_client
-        mock_client.assert_called_once_with(
-            credentials=mock_get_creds.return_value, client_info=mock_client_info.return_value
-        )
+        mock_client.assert_called_once_with(credentials=mock_get_creds.return_value, client_info=CLIENT_INFO)
         assert mock_client.return_value == result
 
     @mock.patch(PUBSUB_STRING.format('PubSubHook.get_conn'))
@@ -201,9 +192,7 @@ class TestPubSubHook(unittest.TestCase):
             subscription=TEST_SUBSCRIPTION,
             subscription_project_id='a-different-project',
         )
-        expected_subscription = 'projects/{}/subscriptions/{}'.format(
-            'a-different-project', TEST_SUBSCRIPTION
-        )
+        expected_subscription = f'projects/a-different-project/subscriptions/{TEST_SUBSCRIPTION}'
         create_method.assert_called_once_with(
             request=dict(
                 name=expected_subscription,
@@ -257,9 +246,7 @@ class TestPubSubHook(unittest.TestCase):
 
     @mock.patch(PUBSUB_STRING.format('PubSubHook.subscriber_client'))
     @mock.patch(PUBSUB_STRING.format('uuid4'), new_callable=mock.Mock(return_value=lambda: TEST_UUID))
-    def test_create_subscription_without_subscription_name(
-        self, mock_uuid, mock_service
-    ):  # noqa  # pylint: disable=unused-argument,line-too-long
+    def test_create_subscription_without_subscription_name(self, mock_uuid, mock_service):
         create_method = mock_service.create_subscription
         expected_name = EXPANDED_SUBSCRIPTION.replace(TEST_SUBSCRIPTION, f'sub-{TEST_UUID}')
 

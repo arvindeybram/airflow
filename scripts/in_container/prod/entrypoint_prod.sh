@@ -16,9 +16,19 @@
 # specific language governing permissions and limitations
 # under the License.
 # Might be empty
-AIRFLOW_COMMAND="${1}"
+AIRFLOW_COMMAND="${1:-}"
 
 set -euo pipefail
+
+# This one is to workaround https://github.com/apache/airflow/issues/17546
+# issue with /usr/lib/<MACHINE>-linux-gnu/libstdc++.so.6: cannot allocate memory in static TLS block
+# We do not yet a more "correct" solution to the problem but in order to avoid raising new issues
+# by users of the prod image, we implement the workaround now.
+# The side effect of this is slightly (in the range of 100s of milliseconds) slower load for any
+# binary started and a little memory used for Heap allocated by initialization of libstdc++
+# This overhead is not happening for binaries that already link dynamically libstdc++
+LD_PRELOAD="/usr/lib/$(uname -m)-linux-gnu/libstdc++.so.6"
+export LD_PRELOAD
 
 function run_check_with_retries {
     local cmd
@@ -75,6 +85,7 @@ function run_nc() {
     nc -zvvn "${ip}" "${port}"
 }
 
+
 function wait_for_connection {
     # Waits for Connection to the backend specified via URL passed as first parameter
     # Detects backend type depending on the URL schema and assigns
@@ -83,24 +94,12 @@ function wait_for_connection {
     # It tries `CONNECTION_CHECK_MAX_COUNT` times and sleeps `CONNECTION_CHECK_SLEEP_TIME` between checks
     local connection_url
     connection_url="${1}"
-    local detected_backend=""
-    local detected_host=""
-    local detected_port=""
-
-    # Auto-detect DB parameters
-    # Examples:
-    #  postgres://YourUserName:password@YourHostname:5432/YourDatabaseName
-    #  postgres://YourUserName:password@YourHostname:5432/YourDatabaseName
-    #  postgres://YourUserName:@YourHostname:/YourDatabaseName
-    #  postgres://YourUserName@YourHostname/YourDatabaseName
-    [[ ${connection_url} =~ ([^:]*)://([^:@]*):?([^@]*)@?([^/:]*):?([0-9]*)/([^\?]*)\??(.*) ]] && \
-        detected_backend=${BASH_REMATCH[1]} &&
-        # Not used USER match
-        # Not used PASSWORD match
-        detected_host=${BASH_REMATCH[4]} &&
-        detected_port=${BASH_REMATCH[5]} &&
-        # Not used SCHEMA match
-        # Not used PARAMS match
+    local detected_backend
+    detected_backend=$(python -c "from urllib.parse import urlsplit; import sys; print(urlsplit(sys.argv[1]).scheme)" "${connection_url}")
+    local detected_host
+    detected_host=$(python -c "from urllib.parse import urlsplit; import sys; print(urlsplit(sys.argv[1]).hostname)" "${connection_url}")
+    local detected_port
+    detected_port=$(python -c "from urllib.parse import urlsplit; import sys; print(urlsplit(sys.argv[1]).port or '')" "${connection_url}")
 
     echo BACKEND="${BACKEND:=${detected_backend}}"
     readonly BACKEND
@@ -110,6 +109,8 @@ function wait_for_connection {
             detected_port=5432
         elif [[ ${BACKEND} == "mysql"* ]]; then
             detected_port=3306
+        elif [[ ${BACKEND} == "mssql"* ]]; then
+            detected_port=1433
         elif [[ ${BACKEND} == "redis"* ]]; then
             detected_port=6379
         elif [[ ${BACKEND} == "amqp"* ]]; then
@@ -150,14 +151,7 @@ function create_www_user() {
     airflow users create \
        --username "${_AIRFLOW_WWW_USER_USERNAME="admin"}" \
        --firstname "${_AIRFLOW_WWW_USER_FIRSTNAME="Airflow"}" \
-       --lastname "${_AIRFLOW_WWW_USER_LASTNME="Admin"}" \
-       --email "${_AIRFLOW_WWW_USER_EMAIL="airflowadmin@example.com"}" \
-       --role "${_AIRFLOW_WWW_USER_ROLE="Admin"}" \
-       --password "${local_password}" ||
-    airflow create_user \
-       --username "${_AIRFLOW_WWW_USER_USERNAME="admin"}" \
-       --firstname "${_AIRFLOW_WWW_USER_FIRSTNAME="Airflow"}" \
-       --lastname "${_AIRFLOW_WWW_USER_LASTNME="Admin"}" \
+       --lastname "${_AIRFLOW_WWW_USER_LASTNAME="Admin"}" \
        --email "${_AIRFLOW_WWW_USER_EMAIL="airflowadmin@example.com"}" \
        --role "${_AIRFLOW_WWW_USER_ROLE="Admin"}" \
        --password "${local_password}" || true
@@ -193,47 +187,29 @@ function set_pythonpath_for_root_user() {
 }
 
 function wait_for_airflow_db() {
-    # Check if Airflow has a command to check the connection to the database.
-    if ! airflow db check --help >/dev/null 2>&1; then
-        run_check_with_retries "airflow db check"
-    else
-        # Verify connections to the Airflow DB by guessing the database address based on environment variables,
-        # then uses netcat to check that the host is reachable.
-        # This is only used by Airflow 1.10+ as there are no built-in commands to check the db connection.
-        local connection_url
-        if [[ -n "${AIRFLOW__CORE__SQL_ALCHEMY_CONN_CMD=}" ]]; then
-            connection_url="$(eval "${AIRFLOW__CORE__SQL_ALCHEMY_CONN_CMD}")"
-        else
-            # if no DB configured - use sqlite db by default
-            connection_url="${AIRFLOW__CORE__SQL_ALCHEMY_CONN:="sqlite:///${AIRFLOW_HOME}/airflow.db"}"
-        fi
-        # SQLite doesn't require a remote connection, so we don't have to wait.
-        if [[ ${connection_url} != sqlite* ]]; then
-            wait_for_connection "${connection_url}"
-        fi
-    fi
+    # Wait for the command to run successfully to validate the database connection.
+    run_check_with_retries "airflow db check"
 }
 
 function upgrade_db() {
     # Runs airflow db upgrade
-    airflow db upgrade || airflow upgradedb || true
+    airflow db upgrade || true
 }
 
-function wait_for_celery_backend() {
+function wait_for_celery_broker() {
     # Verifies connection to Celery Broker
-    if [[ -n "${AIRFLOW__CELERY__BROKER_URL_CMD=}" ]]; then
-        wait_for_connection "$(eval "${AIRFLOW__CELERY__BROKER_URL_CMD}")"
-    else
-        AIRFLOW__CELERY__BROKER_URL=${AIRFLOW__CELERY__BROKER_URL:=}
-        if [[ -n ${AIRFLOW__CELERY__BROKER_URL=} ]]; then
-            wait_for_connection "${AIRFLOW__CELERY__BROKER_URL}"
-        fi
+    local executor
+    executor="$(airflow config get-value core executor)"
+    if [[ "${executor}" == "CeleryExecutor" ]]; then
+        local connection_url
+        connection_url="$(airflow config get-value celery broker_url)"
+        wait_for_connection "${connection_url}"
     fi
 }
 
 function exec_to_bash_or_python_command_if_specified() {
-    # If one of the commands: 'airflow', 'bash', 'python' is used, either run appropriate
-    # command with exec or update the command line parameters
+    # If one of the commands: 'bash', 'python' is used, either run appropriate
+    # command with exec
     if [[ ${AIRFLOW_COMMAND} == "bash" ]]; then
        shift
        exec "/bin/bash" "${@}"
@@ -311,6 +287,22 @@ if [[ -n "${_AIRFLOW_WWW_USER_CREATE=}" ]] ; then
     create_www_user
 fi
 
+if [[ -n "${_PIP_ADDITIONAL_REQUIREMENTS=}" ]] ; then
+    >&2 echo
+    >&2 echo "!!!!!  Installing additional requirements: '${_PIP_ADDITIONAL_REQUIREMENTS}' !!!!!!!!!!!!"
+    >&2 echo
+    >&2 echo "WARNING: This is a development/test feature only. NEVER use it in production!"
+    >&2 echo "         Instead, build a custom image as described in"
+    >&2 echo
+    >&2 echo "         https://airflow.apache.org/docs/docker-stack/build.html"
+    >&2 echo
+    >&2 echo "         Adding requirements at container startup is fragile and is done every time"
+    >&2 echo "         the container starts, so it is onlny useful for testing and trying out"
+    >&2 echo "         of adding dependencies."
+    >&2 echo
+    pip install --no-cache-dir ${_PIP_ADDITIONAL_REQUIREMENTS}
+fi
+
 
 # The `bash` and `python` commands should also verify the basic connections
 # So they are run after the DB check
@@ -323,14 +315,14 @@ exec_to_bash_or_python_command_if_specified "${@}"
 #     docker run IMAGE webserver
 #
 if [[ ${AIRFLOW_COMMAND} == "airflow" ]]; then
-   AIRFLOW_COMMAND="${2}"
+   AIRFLOW_COMMAND="${2:-}"
    shift
 fi
 
 # Note: the broker backend configuration concerns only a subset of Airflow components
-if [[ ${AIRFLOW_COMMAND} =~ ^(scheduler|celery|worker|flower)$ ]] \
+if [[ ${AIRFLOW_COMMAND} =~ ^(scheduler|celery)$ ]] \
     && [[ "${CONNECTION_CHECK_MAX_COUNT}" -gt "0" ]]; then
-    wait_for_celery_backend "${@}"
+    wait_for_celery_broker
 fi
 
 exec "airflow" "${@}"

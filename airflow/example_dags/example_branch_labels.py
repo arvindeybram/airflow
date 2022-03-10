@@ -19,14 +19,18 @@
 """
 Example DAG demonstrating the usage of labels with different branches.
 """
+import pendulum
 
 from airflow import DAG
 from airflow.operators.dummy import DummyOperator
-from airflow.utils.dates import days_ago
 from airflow.utils.edgemodifier import Label
 
-with DAG("example_branch_labels", schedule_interval="@daily", start_date=days_ago(2)) as dag:
-
+with DAG(
+    "example_branch_labels",
+    schedule_interval="@daily",
+    start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
+    catchup=False,
+) as dag:
     ingest = DummyOperator(task_id="ingest")
     analyse = DummyOperator(task_id="analyze")
     check = DummyOperator(task_id="check_integrity")
@@ -36,5 +40,5 @@ with DAG("example_branch_labels", schedule_interval="@daily", start_date=days_ag
     report = DummyOperator(task_id="report")
 
     ingest >> analyse >> check
-    check >> Label("No errors") >> save >> report  # pylint: disable=expression-not-assigned
-    check >> Label("Errors found") >> describe >> error >> report  # pylint: disable=expression-not-assigned
+    check >> Label("No errors") >> save >> report
+    check >> Label("Errors found") >> describe >> error >> report

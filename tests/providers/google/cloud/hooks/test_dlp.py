@@ -16,7 +16,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# pylint: disable=R0904, C0111, C0302
+
 """
 This module contains various unit tests for
 functions in CloudDLPHook
@@ -32,6 +32,7 @@ from google.cloud.dlp_v2.types import DlpJob
 
 from airflow.exceptions import AirflowException
 from airflow.providers.google.cloud.hooks.dlp import CloudDLPHook
+from airflow.providers.google.common.consts import CLIENT_INFO
 from tests.providers.google.cloud.utils.base_gcp_mock import mock_base_gcp_hook_no_default_project_id
 
 API_RESPONSE = {}  # type: Dict[Any, Any]
@@ -44,15 +45,9 @@ DLP_JOB_PATH = f"projects/{PROJECT_ID}/dlpJobs/{DLP_JOB_ID}"
 TEMPLATE_ID = "template123"
 STORED_INFO_TYPE_ID = "type123"
 TRIGGER_ID = "trigger123"
-DEIDENTIFY_TEMPLATE_ORGANIZATION_PATH = "organizations/{}/deidentifyTemplates/{}".format(
-    ORGANIZATION_ID, TEMPLATE_ID
-)
-INSPECT_TEMPLATE_ORGANIZATION_PATH = "organizations/{}/inspectTemplates/{}".format(
-    ORGANIZATION_ID, TEMPLATE_ID
-)
-STORED_INFO_TYPE_ORGANIZATION_PATH = "organizations/{}/storedInfoTypes/{}".format(
-    ORGANIZATION_ID, STORED_INFO_TYPE_ID
-)
+DEIDENTIFY_TEMPLATE_ORGANIZATION_PATH = f"organizations/{ORGANIZATION_ID}/deidentifyTemplates/{TEMPLATE_ID}"
+INSPECT_TEMPLATE_ORGANIZATION_PATH = f"organizations/{ORGANIZATION_ID}/inspectTemplates/{TEMPLATE_ID}"
+STORED_INFO_TYPE_ORGANIZATION_PATH = f"organizations/{ORGANIZATION_ID}/storedInfoTypes/{STORED_INFO_TYPE_ID}"
 DEIDENTIFY_TEMPLATE_PROJECT_PATH = f"projects/{PROJECT_ID}/deidentifyTemplates/{TEMPLATE_ID}"
 INSPECT_TEMPLATE_PROJECT_PATH = f"projects/{PROJECT_ID}/inspectTemplates/{TEMPLATE_ID}"
 STORED_INFO_TYPE_PROJECT_PATH = f"projects/{PROJECT_ID}/storedInfoTypes/{STORED_INFO_TYPE_ID}"
@@ -67,16 +62,11 @@ class TestCloudDLPHook(unittest.TestCase):
         ):
             self.hook = CloudDLPHook(gcp_conn_id="test")
 
-    @mock.patch(
-        "airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.client_info", new_callable=mock.PropertyMock
-    )
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook._get_credentials")
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.DlpServiceClient")
-    def test_dlp_service_client_creation(self, mock_client, mock_get_creds, mock_client_info):
+    def test_dlp_service_client_creation(self, mock_client, mock_get_creds):
         result = self.hook.get_conn()
-        mock_client.assert_called_once_with(
-            credentials=mock_get_creds.return_value, client_info=mock_client_info.return_value
-        )
+        mock_client.assert_called_once_with(credentials=mock_get_creds.return_value, client_info=CLIENT_INFO)
         assert mock_client.return_value == result
         assert self.hook._client == result
 
@@ -85,7 +75,7 @@ class TestCloudDLPHook(unittest.TestCase):
         self.hook.cancel_dlp_job(dlp_job_id=DLP_JOB_ID, project_id=PROJECT_ID)
 
         get_conn.return_value.cancel_dlp_job.assert_called_once_with(
-            name=DLP_JOB_PATH, retry=None, timeout=None, metadata=None
+            name=DLP_JOB_PATH, retry=None, timeout=None, metadata=()
         )
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
@@ -101,7 +91,7 @@ class TestCloudDLPHook(unittest.TestCase):
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
     def test_cancel_dlp_job_without_parent(self, _, mock_project_id):
         with pytest.raises(AirflowException):
-            self.hook.cancel_dlp_job(dlp_job_id=DLP_JOB_ID)  # pylint: disable=no-value-for-parameter
+            self.hook.cancel_dlp_job(dlp_job_id=DLP_JOB_ID)
 
     @mock.patch(
         'airflow.providers.google.common.hooks.base_google.GoogleBaseHook.project_id',
@@ -120,7 +110,7 @@ class TestCloudDLPHook(unittest.TestCase):
             template_id=None,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
@@ -135,7 +125,7 @@ class TestCloudDLPHook(unittest.TestCase):
             template_id=None,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch(
@@ -161,7 +151,7 @@ class TestCloudDLPHook(unittest.TestCase):
             job_id=None,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch(
@@ -172,7 +162,7 @@ class TestCloudDLPHook(unittest.TestCase):
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
     def test_create_dlp_job_without_project_id(self, mock_get_conn, mock_project_id):
         with pytest.raises(AirflowException):
-            self.hook.create_dlp_job()  # pylint: disable=no-value-for-parameter
+            self.hook.create_dlp_job()
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
     def test_create_dlp_job_with_wait_until_finished(self, get_conn):
@@ -184,7 +174,7 @@ class TestCloudDLPHook(unittest.TestCase):
         self.hook.create_dlp_job(project_id=PROJECT_ID)
 
         get_conn.return_value.get_dlp_job.assert_called_once_with(
-            name=DLP_JOB_PATH, retry=None, timeout=None, metadata=None
+            name=DLP_JOB_PATH, retry=None, timeout=None, metadata=()
         )
 
     @mock.patch(
@@ -204,7 +194,7 @@ class TestCloudDLPHook(unittest.TestCase):
             template_id=None,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
@@ -219,7 +209,7 @@ class TestCloudDLPHook(unittest.TestCase):
             template_id=None,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch(
@@ -244,7 +234,7 @@ class TestCloudDLPHook(unittest.TestCase):
             trigger_id=None,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch(
@@ -255,7 +245,7 @@ class TestCloudDLPHook(unittest.TestCase):
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
     def test_create_job_trigger_without_parent(self, mock_get_conn, mock_project_id):
         with pytest.raises(AirflowException):
-            self.hook.create_job_trigger()  # pylint: disable=no-value-for-parameter
+            self.hook.create_job_trigger()
 
     @mock.patch(
         'airflow.providers.google.common.hooks.base_google.GoogleBaseHook.project_id',
@@ -274,7 +264,7 @@ class TestCloudDLPHook(unittest.TestCase):
             stored_info_type_id=None,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
@@ -289,7 +279,7 @@ class TestCloudDLPHook(unittest.TestCase):
             stored_info_type_id=None,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch(
@@ -317,7 +307,7 @@ class TestCloudDLPHook(unittest.TestCase):
             deidentify_template_name=None,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch(
@@ -328,7 +318,7 @@ class TestCloudDLPHook(unittest.TestCase):
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
     def test_deidentify_content_without_parent(self, mock_get_conn, mock_project_id):
         with pytest.raises(AirflowException):
-            self.hook.deidentify_content()  # pylint: disable=no-value-for-parameter
+            self.hook.deidentify_content()
 
     @mock.patch(
         'airflow.providers.google.common.hooks.base_google.GoogleBaseHook.project_id',
@@ -343,7 +333,7 @@ class TestCloudDLPHook(unittest.TestCase):
             name=DEIDENTIFY_TEMPLATE_ORGANIZATION_PATH,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
@@ -354,7 +344,7 @@ class TestCloudDLPHook(unittest.TestCase):
             name=DEIDENTIFY_TEMPLATE_PROJECT_PATH,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
@@ -377,7 +367,7 @@ class TestCloudDLPHook(unittest.TestCase):
         self.hook.delete_dlp_job(dlp_job_id=DLP_JOB_ID, project_id=PROJECT_ID)
 
         get_conn.return_value.delete_dlp_job.assert_called_once_with(
-            name=DLP_JOB_PATH, retry=None, timeout=None, metadata=None
+            name=DLP_JOB_PATH, retry=None, timeout=None, metadata=()
         )
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
@@ -393,7 +383,7 @@ class TestCloudDLPHook(unittest.TestCase):
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
     def test_delete_dlp_job_without_parent(self, mock_get_conn, mock_project_id):
         with pytest.raises(AirflowException):
-            self.hook.delete_dlp_job(dlp_job_id=DLP_JOB_ID)  # pylint: disable=no-value-for-parameter
+            self.hook.delete_dlp_job(dlp_job_id=DLP_JOB_ID)
 
     @mock.patch(
         'airflow.providers.google.common.hooks.base_google.GoogleBaseHook.project_id',
@@ -408,7 +398,7 @@ class TestCloudDLPHook(unittest.TestCase):
             name=INSPECT_TEMPLATE_ORGANIZATION_PATH,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
@@ -419,7 +409,7 @@ class TestCloudDLPHook(unittest.TestCase):
             name=INSPECT_TEMPLATE_PROJECT_PATH,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
@@ -442,7 +432,7 @@ class TestCloudDLPHook(unittest.TestCase):
         self.hook.delete_job_trigger(job_trigger_id=TRIGGER_ID, project_id=PROJECT_ID)
 
         get_conn.return_value.delete_job_trigger.assert_called_once_with(
-            name=JOB_TRIGGER_PATH, retry=None, timeout=None, metadata=None
+            name=JOB_TRIGGER_PATH, retry=None, timeout=None, metadata=()
         )
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
@@ -458,7 +448,7 @@ class TestCloudDLPHook(unittest.TestCase):
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
     def test_delete_job_trigger_without_parent(self, mock_get_conn, mock_project_id):
         with pytest.raises(AirflowException):
-            self.hook.delete_job_trigger(job_trigger_id=TRIGGER_ID)  # pylint: disable=no-value-for-parameter
+            self.hook.delete_job_trigger(job_trigger_id=TRIGGER_ID)
 
     @mock.patch(
         'airflow.providers.google.common.hooks.base_google.GoogleBaseHook.project_id',
@@ -475,7 +465,7 @@ class TestCloudDLPHook(unittest.TestCase):
             name=STORED_INFO_TYPE_ORGANIZATION_PATH,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
@@ -486,7 +476,7 @@ class TestCloudDLPHook(unittest.TestCase):
             name=STORED_INFO_TYPE_PROJECT_PATH,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
@@ -519,7 +509,7 @@ class TestCloudDLPHook(unittest.TestCase):
             name=DEIDENTIFY_TEMPLATE_ORGANIZATION_PATH,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
@@ -532,7 +522,7 @@ class TestCloudDLPHook(unittest.TestCase):
             name=DEIDENTIFY_TEMPLATE_PROJECT_PATH,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
@@ -557,7 +547,7 @@ class TestCloudDLPHook(unittest.TestCase):
 
         assert result is API_RESPONSE
         get_conn.return_value.get_dlp_job.assert_called_once_with(
-            name=DLP_JOB_PATH, retry=None, timeout=None, metadata=None
+            name=DLP_JOB_PATH, retry=None, timeout=None, metadata=()
         )
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
@@ -573,7 +563,7 @@ class TestCloudDLPHook(unittest.TestCase):
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
     def test_get_dlp_job_without_parent(self, mock_get_conn, mock_project_id):
         with pytest.raises(AirflowException):
-            self.hook.get_dlp_job(dlp_job_id=DLP_JOB_ID)  # pylint: disable=no-value-for-parameter
+            self.hook.get_dlp_job(dlp_job_id=DLP_JOB_ID)
 
     @mock.patch(
         'airflow.providers.google.common.hooks.base_google.GoogleBaseHook.project_id',
@@ -590,7 +580,7 @@ class TestCloudDLPHook(unittest.TestCase):
             name=INSPECT_TEMPLATE_ORGANIZATION_PATH,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
@@ -603,7 +593,7 @@ class TestCloudDLPHook(unittest.TestCase):
             name=INSPECT_TEMPLATE_PROJECT_PATH,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
@@ -628,7 +618,7 @@ class TestCloudDLPHook(unittest.TestCase):
 
         assert result is API_RESPONSE
         get_conn.return_value.get_job_trigger.assert_called_once_with(
-            name=JOB_TRIGGER_PATH, retry=None, timeout=None, metadata=None
+            name=JOB_TRIGGER_PATH, retry=None, timeout=None, metadata=()
         )
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
@@ -644,7 +634,7 @@ class TestCloudDLPHook(unittest.TestCase):
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
     def test_get_job_trigger_without_parent(self, mock_get_conn, mock_project_id):
         with pytest.raises(AirflowException):
-            self.hook.get_job_trigger(job_trigger_id=TRIGGER_ID)  # pylint: disable=no-value-for-parameter
+            self.hook.get_job_trigger(job_trigger_id=TRIGGER_ID)
 
     @mock.patch(
         'airflow.providers.google.common.hooks.base_google.GoogleBaseHook.project_id',
@@ -663,7 +653,7 @@ class TestCloudDLPHook(unittest.TestCase):
             name=STORED_INFO_TYPE_ORGANIZATION_PATH,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
@@ -678,7 +668,7 @@ class TestCloudDLPHook(unittest.TestCase):
             name=STORED_INFO_TYPE_PROJECT_PATH,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
@@ -709,7 +699,7 @@ class TestCloudDLPHook(unittest.TestCase):
             inspect_template_name=None,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch(
@@ -720,7 +710,7 @@ class TestCloudDLPHook(unittest.TestCase):
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
     def test_inspect_content_without_parent(self, mock_get_conn, mock_project_id):
         with pytest.raises(AirflowException):
-            self.hook.inspect_content()  # pylint: disable=no-value-for-parameter
+            self.hook.inspect_content()
 
     @mock.patch(
         'airflow.providers.google.common.hooks.base_google.GoogleBaseHook.project_id',
@@ -738,7 +728,7 @@ class TestCloudDLPHook(unittest.TestCase):
             order_by=None,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
@@ -752,7 +742,7 @@ class TestCloudDLPHook(unittest.TestCase):
             order_by=None,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch(
@@ -778,7 +768,7 @@ class TestCloudDLPHook(unittest.TestCase):
             order_by=None,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch(
@@ -789,7 +779,7 @@ class TestCloudDLPHook(unittest.TestCase):
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
     def test_list_dlp_jobs_without_parent(self, mock_get_conn, mock_project_id):
         with pytest.raises(AirflowException):
-            self.hook.list_dlp_jobs()  # pylint: disable=no-value-for-parameter
+            self.hook.list_dlp_jobs()
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
     def test_list_info_types(self, get_conn):
@@ -798,7 +788,7 @@ class TestCloudDLPHook(unittest.TestCase):
 
         assert result is API_RESPONSE
         get_conn.return_value.list_info_types.assert_called_once_with(
-            language_code=None, filter_=None, retry=None, timeout=None, metadata=None
+            language_code=None, filter_=None, retry=None, timeout=None, metadata=()
         )
 
     @mock.patch(
@@ -817,7 +807,7 @@ class TestCloudDLPHook(unittest.TestCase):
             order_by=None,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
@@ -831,7 +821,7 @@ class TestCloudDLPHook(unittest.TestCase):
             order_by=None,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch(
@@ -856,7 +846,7 @@ class TestCloudDLPHook(unittest.TestCase):
             filter_=None,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch(
@@ -867,7 +857,7 @@ class TestCloudDLPHook(unittest.TestCase):
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
     def test_list_job_triggers_without_parent(self, mock_get_conn, mock_project_id):
         with pytest.raises(AirflowException):
-            self.hook.list_job_triggers()  # pylint: disable=no-value-for-parameter
+            self.hook.list_job_triggers()
 
     @mock.patch(
         'airflow.providers.google.common.hooks.base_google.GoogleBaseHook.project_id',
@@ -885,7 +875,7 @@ class TestCloudDLPHook(unittest.TestCase):
             order_by=None,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
@@ -899,7 +889,7 @@ class TestCloudDLPHook(unittest.TestCase):
             order_by=None,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch(
@@ -926,7 +916,7 @@ class TestCloudDLPHook(unittest.TestCase):
             byte_item=None,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch(
@@ -937,7 +927,7 @@ class TestCloudDLPHook(unittest.TestCase):
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
     def test_redact_image_without_parent(self, mock_get_conn, mock_project_id):
         with pytest.raises(AirflowException):
-            self.hook.redact_image()  # pylint: disable=no-value-for-parameter
+            self.hook.redact_image()
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
     def test_reidentify_content(self, get_conn):
@@ -954,7 +944,7 @@ class TestCloudDLPHook(unittest.TestCase):
             reidentify_template_name=None,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch(
@@ -965,7 +955,7 @@ class TestCloudDLPHook(unittest.TestCase):
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
     def test_reidentify_content_without_parent(self, mock_get_conn, mock_project_id):
         with pytest.raises(AirflowException):
-            self.hook.reidentify_content()  # pylint: disable=no-value-for-parameter
+            self.hook.reidentify_content()
 
     @mock.patch(
         'airflow.providers.google.common.hooks.base_google.GoogleBaseHook.project_id',
@@ -986,7 +976,7 @@ class TestCloudDLPHook(unittest.TestCase):
             update_mask=None,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
@@ -1001,7 +991,7 @@ class TestCloudDLPHook(unittest.TestCase):
             update_mask=None,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
@@ -1036,7 +1026,7 @@ class TestCloudDLPHook(unittest.TestCase):
             update_mask=None,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
@@ -1051,7 +1041,7 @@ class TestCloudDLPHook(unittest.TestCase):
             update_mask=None,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
@@ -1081,7 +1071,7 @@ class TestCloudDLPHook(unittest.TestCase):
             update_mask=None,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
@@ -1097,7 +1087,7 @@ class TestCloudDLPHook(unittest.TestCase):
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
     def test_update_job_trigger_without_parent(self, mock_get_conn, mock_project_id):
         with pytest.raises(AirflowException):
-            self.hook.update_job_trigger(job_trigger_id=TRIGGER_ID)  # pylint: disable=no-value-for-parameter
+            self.hook.update_job_trigger(job_trigger_id=TRIGGER_ID)
 
     @mock.patch(
         'airflow.providers.google.common.hooks.base_google.GoogleBaseHook.project_id',
@@ -1118,7 +1108,7 @@ class TestCloudDLPHook(unittest.TestCase):
             update_mask=None,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")
@@ -1135,7 +1125,7 @@ class TestCloudDLPHook(unittest.TestCase):
             update_mask=None,
             retry=None,
             timeout=None,
-            metadata=None,
+            metadata=(),
         )
 
     @mock.patch("airflow.providers.google.cloud.hooks.dlp.CloudDLPHook.get_conn")

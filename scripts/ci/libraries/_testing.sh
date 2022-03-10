@@ -16,7 +16,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-export MEMORY_REQUIRED_FOR_INTEGRATION_TEST_PARALLEL_RUN=33000
+export MEMORY_REQUIRED_FOR_HEAVY_TEST_PARALLEL_RUN=33000
 
 function testing::skip_tests_if_requested(){
     if [[ -f ${BUILD_CACHE_DIR}/.skip_tests ]]; then
@@ -113,4 +113,56 @@ function testing::get_test_types_to_run() {
         fi
     fi
     readonly TEST_TYPES
+}
+
+function testing::dump_container_logs() {
+    start_end::group_start "${COLOR_BLUE}Dumping container logs ${container}${COLOR_RESET}"
+    local container="${1}"
+    local dump_file
+    dump_file=${AIRFLOW_SOURCES}/files/container_logs_${container}_$(date "+%Y-%m-%d")_${CI_BUILD_ID}_${CI_JOB_ID}.log
+    echo "${COLOR_BLUE}###########################################################################################${COLOR_RESET}"
+    echo "                   Dumping logs from ${container} container"
+    echo "${COLOR_BLUE}###########################################################################################${COLOR_RESET}"
+    docker_v logs "${container}" > "${dump_file}"
+    echo "                   Container ${container} logs dumped to ${dump_file}"
+    echo "${COLOR_BLUE}###########################################################################################${COLOR_RESET}"
+    start_end::group_end
+}
+
+function testing::setup_docker_compose_backend() {
+    local TEST_TYPE
+    TEST_TYPE="${1}"
+    if [[ ${BACKEND} == "mssql" ]]; then
+        local backend_docker_compose=("-f" "${SCRIPTS_CI_DIR}/docker-compose/backend-${BACKEND}-${DEBIAN_VERSION}.yml")
+        local docker_filesystem
+        docker_filesystem=$(stat "-f" "-c" "%T" /var/lib/docker 2>/dev/null || echo "unknown")
+        if [[ ${docker_filesystem} == "tmpfs" ]]; then
+            # In case of tmpfs backend for docker, mssql fails because TMPFS does not support
+            # O_DIRECT parameter for direct writing to the filesystem
+            # https://github.com/microsoft/mssql-docker/issues/13
+            # so we need to mount an external volume for its db location
+            # the external db must allow for parallel testing so TEST_TYPE
+            # is added to the volume name
+            export MSSQL_DATA_VOLUME="${HOME}/tmp-mssql-volume-${TEST_TYPE}-${MSSQL_VERSION}"
+            mkdir -p "${MSSQL_DATA_VOLUME}"
+            # MSSQL 2019 runs with non-root user by default so we have to make the volumes world-writeable
+            # This is a bit scary and we could get by making it group-writeable but the group would have
+            # to be set to "root" (GID=0) for the volume to work and this cannot be accomplished without sudo
+            chmod a+rwx "${MSSQL_DATA_VOLUME}"
+            backend_docker_compose+=("-f" "${SCRIPTS_CI_DIR}/docker-compose/backend-mssql-bind-volume.yml")
+
+            # Runner user doesn't have blanket sudo access, but we can run docker as root. Go figure
+            traps::add_trap "docker run -u 0 --rm -v ${MSSQL_DATA_VOLUME}:/mssql alpine sh -c 'rm -rvf -- /mssql/.* /mssql/*' || true" EXIT
+
+            # Clean up at start too, in case a previous runner left it messy
+            docker run --rm -u 0 -v "${MSSQL_DATA_VOLUME}":/mssql alpine sh -c 'rm -rfv -- /mssql/.* /mssql/*'  || true
+            export BACKEND_DOCKER_COMPOSE=("${backend_docker_compose[@]}")
+        else
+            backend_docker_compose+=("-f" "${SCRIPTS_CI_DIR}/docker-compose/backend-mssql-docker-volume.yml")
+            export BACKEND_DOCKER_COMPOSE=("${backend_docker_compose[@]}")
+        fi
+    else
+        local backend_docker_compose=("-f" "${SCRIPTS_CI_DIR}/docker-compose/backend-${BACKEND}.yml")
+        export BACKEND_DOCKER_COMPOSE=("${backend_docker_compose[@]}")
+    fi
 }

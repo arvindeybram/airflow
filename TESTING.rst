@@ -55,10 +55,10 @@ Follow the guidelines when writing unit tests:
 **NOTE:** We plan to convert all unit tests to standard "asserts" semi-automatically, but this will be done later
 in Airflow 2.0 development phase. That will include setUp/tearDown/context managers and decorators.
 
-Running Unit Tests from IDE
----------------------------
+Running Unit Tests from PyCharm IDE
+-----------------------------------
 
-To run unit tests from the IDE, create the `local virtualenv <LOCAL_VIRTUALENV.rst>`_,
+To run unit tests from the PyCharm IDE, create the `local virtualenv <LOCAL_VIRTUALENV.rst>`_,
 select it as the default project's environment, then configure your test runner:
 
 .. image:: images/configure_test_runner.png
@@ -75,6 +75,38 @@ and run unit tests as follows:
 (with no Breeze installed) if they do not have dependencies such as
 Postgres/MySQL/Hadoop/etc.
 
+Running Unit Tests from Visual Studio Code
+------------------------------------------
+
+To run unit tests from the Visual Studio Code:
+
+1. Using the ``Extensions`` view install Python extension, reload if required
+
+.. image:: images/vscode_install_python_extension.png
+    :align: center
+    :alt: Installing Python extension
+
+2. Using the ``Testing`` view click on ``Configure Python Tests`` and select ``pytest`` framework
+
+.. image:: images/vscode_configure_python_tests.png
+    :align: center
+    :alt: Configuring Python tests
+
+.. image:: images/vscode_select_pytest_framework.png
+    :align: center
+    :alt: Selecting pytest framework
+
+3. Open ``/.vscode/settings.json`` and add ``"python.testing.pytestArgs": ["tests"]`` to enable tests discovery
+
+.. image:: images/vscode_add_pytest_settings.png
+    :align: center
+    :alt: Enabling tests discovery
+
+4. Now you are able to run and debug tests from both the ``Testing`` view and test files
+
+.. image:: images/vscode_run_tests.png
+    :align: center
+    :alt: Running tests
 
 Running Unit Tests
 --------------------------------
@@ -200,7 +232,7 @@ Helm Unit Tests
 
 On the Airflow Project, we have decided to stick with pythonic testing for our Helm chart. This makes our chart
 easier to test, easier to modify, and able to run with the same testing infrastructure. To add Helm unit tests
-go to the ``chart/tests`` directory and add your unit test by creating a class that extends ``unittest.TestCase``
+add them in ``tests/charts``.
 
 .. code-block:: python
 
@@ -217,7 +249,7 @@ Example test here:
 
 .. code-block:: python
 
-    from .helm_template_generator import render_chart, render_k8s_object
+    from tests.charts.helm_template_generator import render_chart, render_k8s_object
 
     git_sync_basic = """
     dags:
@@ -254,7 +286,7 @@ Enabling Integrations
 ---------------------
 
 Airflow integration tests cannot be run in the local virtualenv. They can only run in the Breeze
-environment with enabled integrations and in the CI. See `<CI.yml>`_ for details about Airflow CI.
+environment with enabled integrations and in the CI. See `<.github/workflows/ci.yml>`_ for details about Airflow CI.
 
 When you are in the Breeze environment, by default, all integrations are disabled. This enables only true unit tests
 to be executed in Breeze. You can enable the integration by passing the ``--integration <INTEGRATION>``
@@ -478,7 +510,7 @@ more than 30 minutes on the same machine when tests are run sequentially.
 
   On MacOS you might have less CPUs and less memory available to run the tests than you have in the host,
   simply because your Docker engine runs in a Linux Virtual Machine under-the-hood. If you want to make
-  use of the paralllelism and memory usage for the CI tests you might want to increase the resources available
+  use of the parallelism and memory usage for the CI tests you might want to increase the resources available
   to your docker engine. See the `Resources <https://docs.docker.com/docker-for-mac/#resources>`_ chapter
   in the ``Docker for Mac`` documentation on how to do it.
 
@@ -595,7 +627,7 @@ Deploying Airflow to the Kubernetes cluster created is also done via ``kind-clus
 
 The deploy command performs those steps:
 
-1. It rebuilds the latest ``apache/airflow:master-pythonX.Y`` production images using the
+1. It rebuilds the latest ``apache/airflow:main-pythonX.Y`` production images using the
    latest sources using local caching. It also adds example DAGs to the image, so that they do not
    have to be mounted inside.
 2. Loads the image to the Kind Cluster using the ``kind load`` command.
@@ -624,6 +656,8 @@ to run the tests manually one by one.
 Running Kubernetes tests via shell:
 
 .. code-block:: bash
+
+      export EXECUTOR="KubernetesExecutor" ## can be also CeleryExecutor or CeleryKubernetesExecutor
 
       ./scripts/ci/kubernetes/ci_run_kubernetes_tests.sh                      - runs all kubernetes tests
       ./scripts/ci/kubernetes/ci_run_kubernetes_tests.sh TEST [TEST ...]      - runs selected kubernetes tests (from kubernetes_tests folder)
@@ -656,6 +690,10 @@ Where ``KIND_CLUSTER_NAME`` is the name of the cluster and ``HOST_PYTHON_VERSION
 in the host.
 
 You can enter the shell via those scripts
+
+.. code-block:: bash
+
+      export EXECUTOR="KubernetesExecutor" ## can be also CeleryExecutor or CeleryKubernetesExecutor
 
       ./scripts/ci/kubernetes/ci_run_kubernetes_tests.sh [-i|--interactive]   - Activates virtual environment ready to run tests and drops you in
       ./scripts/ci/kubernetes/ci_run_kubernetes_tests.sh [--help]             - Prints this help message
@@ -715,14 +753,12 @@ The typical session for tests with Kubernetes looks like follows:
 
        Use CI image.
 
-       Branch name:             master
-       Docker image:            apache/airflow:master-python3.7-ci
+       Branch name:             main
+       Docker image:            apache/airflow:main-python3.7-ci
 
        Airflow source version:  2.0.0.dev0
        Python version:          3.7
-       DockerHub user:          apache
-       DockerHub repo:          airflow
-       Backend:                 postgres 9.6
+       Backend:                 postgres 10
 
     No kind clusters found.
 
@@ -757,14 +793,12 @@ The typical session for tests with Kubernetes looks like follows:
 
        Use CI image.
 
-       Branch name:             master
-       Docker image:            apache/airflow:master-python3.7-ci
+       Branch name:             main
+       Docker image:            apache/airflow:main-python3.7-ci
 
        Airflow source version:  2.0.0.dev0
        Python version:          3.7
-       DockerHub user:          apache
-       DockerHub repo:          airflow
-       Backend:                 postgres 9.6
+       Backend:                 postgres 10
 
     airflow-python-3.7-v1.17.0-control-plane
     airflow-python-3.7-v1.17.0-worker
@@ -1214,7 +1248,7 @@ Below are the steps you need to take to set up your virtual machine in the Googl
         --zone="${GCP_ZONE}" \
         --machine-type=f1-micro \
         --subnet="${GCP_NETWORK_NAME}" \
-        --image=debian-10-buster-v20200210 \
+        --image=debian-11-bullseye-v20220120 \
         --image-project=debian-cloud \
         --preemptible
 
@@ -1274,9 +1308,7 @@ It will run a backfill job:
 .. code-block:: python
 
   if __name__ == "__main__":
-      from airflow.utils.state import State
-
-      dag.clear(dag_run_state=State.NONE)
+      dag.clear()
       dag.run()
 
 
@@ -1300,7 +1332,7 @@ By default ``/files/dags`` folder is mounted from your local ``<AIRFLOW_SOURCES>
 the directory used by airflow scheduler and webserver to scan dags for. You can place your dags there
 to test them.
 
-The DAGs can be run in the master version of Airflow but they also work
+The DAGs can be run in the main version of Airflow but they also work
 with older versions.
 
 To run the tests for Airflow 1.10.* series, you need to run Breeze with
@@ -1339,53 +1371,3 @@ On the screen you will see database queries for the given test.
 
 SQL query tracking does not work properly if your test runs subprocesses. Only queries from the main process
 are tracked.
-
-BASH Unit Testing (BATS)
-========================
-
-We have started adding tests to cover Bash scripts we have in our codebase.
-The tests are placed in the ``tests\bats`` folder.
-They require BAT CLI to be installed if you want to run them on your
-host or via a Docker image.
-
-Installing BATS CLI
----------------------
-
-You can find an installation guide as well as information on how to write
-the bash tests in `BATS Installation <https://github.com/bats-core/bats-core#installation>`_.
-
-Running BATS Tests on the Host
-------------------------------
-
-To run all tests:
-
-.. code-block:: bash
-
-   bats -r tests/bats/
-
-To run a single test:
-
-.. code-block:: bash
-
-   bats tests/bats/your_test_file.bats
-
-Running BATS Tests via Docker
------------------------------
-
-To run all tests:
-
-.. code-block:: bash
-
-   docker run -it --workdir /airflow -v $(pwd):/airflow  bats/bats:latest -r /airflow/tests/bats
-
-To run a single test:
-
-.. code-block:: bash
-
-   docker run -it --workdir /airflow -v $(pwd):/airflow  bats/bats:latest /airflow/tests/bats/your_test_file.bats
-
-Using BATS
-----------
-
-You can read more about using BATS CLI and writing tests in
-`BATS Usage <https://github.com/bats-core/bats-core#usage>`_.

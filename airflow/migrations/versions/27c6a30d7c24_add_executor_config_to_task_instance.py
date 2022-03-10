@@ -16,7 +16,7 @@
 # under the License.
 
 
-"""kubernetes_resource_checkpointing
+"""Add ``executor_config`` column to ``task_instance`` table
 
 Revision ID: 33ae817a1ff4
 Revises: 947454bf1dff
@@ -33,14 +33,15 @@ revision = '27c6a30d7c24'
 down_revision = '33ae817a1ff4'
 branch_labels = None
 depends_on = None
+airflow_version = '1.10.0'
 
 TASK_INSTANCE_TABLE = "task_instance"
 NEW_COLUMN = "executor_config"
 
 
-def upgrade():  # noqa: D103
+def upgrade():
     op.add_column(TASK_INSTANCE_TABLE, sa.Column(NEW_COLUMN, sa.PickleType(pickler=dill)))
 
 
-def downgrade():  # noqa: D103
+def downgrade():
     op.drop_column(TASK_INSTANCE_TABLE, NEW_COLUMN)

@@ -21,7 +21,7 @@ import os
 from typing import Optional
 
 import psutil
-from setproctitle import setproctitle  # pylint: disable=no-name-in-module
+from setproctitle import setproctitle
 
 from airflow.settings import CAN_FORK
 from airflow.task.task_runner.base_task_runner import BaseTaskRunner
@@ -46,22 +46,22 @@ class StandardTaskRunner(BaseTaskRunner):
         subprocess = self.run_command()
         return psutil.Process(subprocess.pid)
 
-    def _start_by_fork(self):  # pylint: disable=inconsistent-return-statements
+    def _start_by_fork(self):
         pid = os.fork()
         if pid:
             self.log.info("Started process %d to run task", pid)
             return psutil.Process(pid)
         else:
+            # Start a new process group
+            os.setpgid(0, 0)
             import signal
+
+            signal.signal(signal.SIGINT, signal.SIG_DFL)
+            signal.signal(signal.SIGTERM, signal.SIG_DFL)
 
             from airflow import settings
             from airflow.cli.cli_parser import get_parser
             from airflow.sentry import Sentry
-
-            signal.signal(signal.SIGINT, signal.SIG_DFL)
-            signal.signal(signal.SIGTERM, signal.SIG_DFL)
-            # Start a new process group
-            os.setpgid(0, 0)
 
             # Force a new SQLAlchemy session. We can't share open DB handles
             # between process. The cli code will re-create this as part of its
@@ -73,24 +73,35 @@ class StandardTaskRunner(BaseTaskRunner):
             # [1:] - remove "airflow" from the start of the command
             args = parser.parse_args(self._command[1:])
 
+            # We prefer the job_id passed on the command-line because at this time, the
+            # task instance may not have been updated.
+            job_id = getattr(args, "job_id", self._task_instance.job_id)
             self.log.info('Running: %s', self._command)
-            self.log.info('Job %s: Subtask %s', self._task_instance.job_id, self._task_instance.task_id)
+            self.log.info('Job %s: Subtask %s', job_id, self._task_instance.task_id)
 
-            proc_title = "airflow task runner: {0.dag_id} {0.task_id} {0.execution_date}"
-            if hasattr(args, "job_id"):
+            proc_title = "airflow task runner: {0.dag_id} {0.task_id} {0.execution_date_or_run_id}"
+            if job_id is not None:
                 proc_title += " {0.job_id}"
             setproctitle(proc_title.format(args))
 
             try:
                 args.func(args, dag=self.dag)
                 return_code = 0
-            except Exception:  # pylint: disable=broad-except
+            except Exception as exc:
                 return_code = 1
+
+                self.log.error(
+                    "Failed to execute job %s for task %s (%s; %r)",
+                    job_id,
+                    self._task_instance.task_id,
+                    exc,
+                    os.getpid(),
+                )
             finally:
                 # Explicitly flush any pending exception to Sentry if enabled
                 Sentry.flush()
                 logging.shutdown()
-                os._exit(return_code)  # pylint: disable=protected-access
+                os._exit(return_code)
 
     def return_code(self, timeout: int = 0) -> Optional[int]:
         # We call this multiple times, but we can only wait on the process once

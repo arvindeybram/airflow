@@ -26,11 +26,14 @@ from argparse import Action, ArgumentError, RawTextHelpFormatter
 from functools import lru_cache
 from typing import Callable, Dict, Iterable, List, NamedTuple, Optional, Union
 
-from airflow import settings
+import lazy_object_proxy
+
+from airflow import PY37, settings
 from airflow.cli.commands.legacy_commands import check_legacy_command
 from airflow.configuration import conf
 from airflow.exceptions import AirflowException
 from airflow.executors.executor_constants import CELERY_EXECUTOR, CELERY_KUBERNETES_EXECUTOR
+from airflow.executors.executor_loader import ExecutorLoader
 from airflow.utils.cli import ColorMode
 from airflow.utils.helpers import partition
 from airflow.utils.module_loading import import_string
@@ -57,19 +60,46 @@ class DefaultHelpParser(argparse.ArgumentParser):
 
     def _check_value(self, action, value):
         """Override _check_value and check conditionally added command"""
-        executor = conf.get('core', 'EXECUTOR')
-        if value == 'celery' and executor not in (CELERY_EXECUTOR, CELERY_KUBERNETES_EXECUTOR):
-            message = f'celery subcommand works only with CeleryExecutor, your current executor: {executor}'
-            raise ArgumentError(action, message)
-        if value == 'kubernetes':
+        if action.dest == 'subcommand' and value == 'celery':
+            executor = conf.get('core', 'EXECUTOR')
+            if executor not in (CELERY_EXECUTOR, CELERY_KUBERNETES_EXECUTOR):
+                executor_cls, _ = ExecutorLoader.import_executor_cls(executor)
+                classes = ()
+                try:
+                    from airflow.executors.celery_executor import CeleryExecutor
+
+                    classes += (CeleryExecutor,)
+                except ImportError:
+                    message = (
+                        "The celery subcommand requires that you pip install the celery module. "
+                        "To do it, run: pip install 'apache-airflow[celery]'"
+                    )
+                    raise ArgumentError(action, message)
+                try:
+                    from airflow.executors.celery_kubernetes_executor import CeleryKubernetesExecutor
+
+                    classes += (CeleryKubernetesExecutor,)
+                except ImportError:
+                    pass
+                if not issubclass(executor_cls, classes):
+                    message = (
+                        f'celery subcommand works only with CeleryExecutor, CeleryKubernetesExecutor and '
+                        f'executors derived from them, your current executor: {executor}, subclassed from: '
+                        f'{", ".join([base_cls.__qualname__ for base_cls in executor_cls.__bases__])}'
+                    )
+                    raise ArgumentError(action, message)
+        if action.dest == 'subcommand' and value == 'kubernetes':
             try:
-                import kubernetes.client  # noqa: F401 pylint: disable=unused-import
+                import kubernetes.client  # noqa: F401
             except ImportError:
                 message = (
-                    'The kubernetes subcommand requires that you pip install the kubernetes python client.'
+                    "The kubernetes subcommand requires that you pip install the kubernetes python client. "
                     "To do it, run: pip install 'apache-airflow[cncf.kubernetes]'"
                 )
                 raise ArgumentError(action, message)
+        if action.dest == 'subcommand' and value == 'triggerer':
+            if not PY37:
+                raise ArgumentError(action, 'triggerer subcommand only works with Python 3.7+')
 
         if action.choices is not None and value not in action.choices:
             check_legacy_command(action, value)
@@ -89,7 +119,6 @@ _UNSET = object()
 class Arg:
     """Class to keep information about command line argument"""
 
-    # pylint: disable=redefined-builtin,unused-argument,too-many-arguments
     def __init__(
         self,
         flags=_UNSET,
@@ -113,8 +142,6 @@ class Arg:
 
             self.kwargs[k] = v
 
-    # pylint: enable=redefined-builtin,unused-argument,too-many-arguments
-
     def add_to_parser(self, parser: argparse.ArgumentParser):
         """Add this argument to an ArgumentParser"""
         parser.add_argument(*self.flags, **self.kwargs)
@@ -137,10 +164,18 @@ def positive_int(*, allow_zero):
     return _check
 
 
+def string_list_type(val):
+    """Parses comma-separated list and returns list of string (strips whitespace)"""
+    return [x.strip() for x in val.split(',')]
+
+
 # Shared
 ARG_DAG_ID = Arg(("dag_id",), help="The id of the dag")
 ARG_TASK_ID = Arg(("task_id",), help="The id of the task")
 ARG_EXECUTION_DATE = Arg(("execution_date",), help="The execution date of the DAG", type=parsedate)
+ARG_EXECUTION_DATE_OR_RUN_ID = Arg(
+    ('execution_date_or_run_id',), help="The execution_date of the DAG or run_id of the DAGRun"
+)
 ARG_TASK_REGEX = Arg(
     ("-t", "--task-regex"), help="The regex to filter specific task_ids to backfill (optional)"
 )
@@ -177,7 +212,10 @@ ARG_STDERR = Arg(("--stderr",), help="Redirect stderr to this file")
 ARG_STDOUT = Arg(("--stdout",), help="Redirect stdout to this file")
 ARG_LOG_FILE = Arg(("-l", "--log-file"), help="Location of the log file")
 ARG_YES = Arg(
-    ("-y", "--yes"), help="Do not prompt to confirm reset. Use with care!", action="store_true", default=False
+    ("-y", "--yes"),
+    help="Do not prompt to confirm. Use with care!",
+    action="store_true",
+    default=False,
 )
 ARG_OUTPUT = Arg(
     (
@@ -194,6 +232,21 @@ ARG_COLOR = Arg(
     help="Do emit colored output (default: auto)",
     choices={ColorMode.ON, ColorMode.OFF, ColorMode.AUTO},
     default=ColorMode.AUTO,
+)
+
+# DB args
+ARG_VERSION_RANGE = Arg(
+    ("-r", "--range"),
+    help="Version range(start:end) for offline sql generation. Example: '2.0.2:2.2.3'",
+    default=None,
+)
+ARG_REVISION_RANGE = Arg(
+    ('--revision-range',),
+    help=(
+        "Migration revision range(start:end) to use for offline sql generation. "
+        "Example: ``a13f7613ad25:7b2661a43ba3``"
+    ),
+    default=None,
 )
 
 # list_dag_runs
@@ -350,11 +403,50 @@ ARG_RUN_ID = Arg(("-r", "--run-id"), help="Helps to identify this run")
 ARG_CONF = Arg(('-c', '--conf'), help="JSON string that gets pickled into the DagRun's conf attribute")
 ARG_EXEC_DATE = Arg(("-e", "--exec-date"), help="The execution date of the DAG", type=parsedate)
 
+# db
+ARG_DB_TABLES = Arg(
+    ("-t", "--tables"),
+    help=lazy_object_proxy.Proxy(
+        lambda: f"Table names to perform maintenance on (use comma-separated list).\n"
+        f"Options: {import_string('airflow.cli.commands.db_command.all_tables')}"
+    ),
+    type=string_list_type,
+)
+ARG_DB_CLEANUP_TIMESTAMP = Arg(
+    ("--clean-before-timestamp",),
+    help="The date or timestamp before which data should be purged.\n"
+    "If no timezone info is supplied then dates are assumed to be in airflow default timezone.\n"
+    "Example: '2022-01-01 00:00:00+01:00'",
+    type=parsedate,
+    required=True,
+)
+ARG_DB_DRY_RUN = Arg(
+    ("--dry-run",),
+    help="Perform a dry run",
+    action="store_true",
+)
+
+
 # pool
 ARG_POOL_NAME = Arg(("pool",), metavar='NAME', help="Pool name")
 ARG_POOL_SLOTS = Arg(("slots",), type=int, help="Pool slots")
 ARG_POOL_DESCRIPTION = Arg(("description",), help="Pool description")
-ARG_POOL_IMPORT = Arg(("file",), metavar="FILEPATH", help="Import pools from JSON file")
+ARG_POOL_IMPORT = Arg(
+    ("file",),
+    metavar="FILEPATH",
+    help="Import pools from JSON file. Example format::\n"
+    + textwrap.indent(
+        textwrap.dedent(
+            '''
+            {
+                "pool_1": {"slots": 5, "description": ""},
+                "pool_2": {"slots": 10, "description": "test"}
+            }'''
+        ),
+        " " * 4,
+    ),
+)
+
 ARG_POOL_EXPORT = Arg(("file",), metavar="FILEPATH", help="Export all pools to JSON file")
 
 # variables
@@ -371,16 +463,16 @@ ARG_VAR_EXPORT = Arg(("file",), help="Export all variables to JSON file")
 ARG_PRINCIPAL = Arg(("principal",), help="kerberos principal", nargs='?')
 ARG_KEYTAB = Arg(("-k", "--keytab"), help="keytab", nargs='?', default=conf.get('kerberos', 'keytab'))
 # run
-# TODO(aoen): "force" is a poor choice of name here since it implies it overrides
-# all dependencies (not just past success), e.g. the ignore_depends_on_past
-# dependency. This flag should be deprecated and renamed to 'ignore_ti_state' and
-# the "ignore_all_dependencies" command should be called the"force" command
-# instead.
 ARG_INTERACTIVE = Arg(
     ('-N', '--interactive'),
     help='Do not capture standard output and error streams (useful for interactive debugging)',
     action='store_true',
 )
+# TODO(aoen): "force" is a poor choice of name here since it implies it overrides
+# all dependencies (not just past success), e.g. the ignore_depends_on_past
+# dependency. This flag should be deprecated and renamed to 'ignore_ti_state' and
+# the "ignore_all_dependencies" command should be called the"force" command
+# instead.
 ARG_FORCE = Arg(
     ("-f", "--force"),
     help="Ignore previous task instance state, rerun regardless if task already succeeded/failed",
@@ -414,11 +506,44 @@ ARG_PICKLE = Arg(("-p", "--pickle"), help="Serialized pickle object of the entir
 ARG_ERROR_FILE = Arg(("--error-file",), help="File to store task failure error")
 ARG_JOB_ID = Arg(("-j", "--job-id"), help=argparse.SUPPRESS)
 ARG_CFG_PATH = Arg(("--cfg-path",), help="Path to config file to use instead of airflow.cfg")
+ARG_MAP_INDEX = Arg(('--map-index',), type=int, default=-1, help="Mapped task index")
+
+
+# database
 ARG_MIGRATION_TIMEOUT = Arg(
     ("-t", "--migration-wait-timeout"),
     help="timeout to wait for db to migrate ",
     type=int,
-    default=0,
+    default=60,
+)
+ARG_DB_VERSION = Arg(
+    (
+        "-n",
+        "--version",
+    ),
+    help="The airflow version to downgrade to. Note: must provide either `--revision` or `--version`.",
+)
+ARG_DB_FROM_VERSION = Arg(
+    ("--from-version",),
+    help="(Optional) If generating sql, may supply a _from_ version",
+)
+ARG_DB_REVISION = Arg(
+    (
+        "-r",
+        "--revision",
+    ),
+    help="The airflow revision to downgrade to. Note: must provide either `--revision` or `--version`.",
+)
+ARG_DB_FROM_REVISION = Arg(
+    ("--from-revision",),
+    help="(Optional) If generating sql, may supply a _from_ revision",
+)
+ARG_DB_SQL = Arg(
+    ("-s", "--sql-only"),
+    help="Don't actually run migrations; just print out sql scripts for offline migration. "
+    "Required if using either `--from-version` or `--from-version`.",
+    action="store_true",
+    default=False,
 )
 
 # webserver
@@ -673,6 +798,13 @@ ARG_SKIP_SERVE_LOGS = Arg(
     help="Don't start the serve logs process along with the workers",
     action="store_true",
 )
+ARG_ROLE_IMPORT = Arg(("file",), help="Import roles from JSON file", nargs=None)
+ARG_ROLE_EXPORT = Arg(("file",), help="Export all roles to JSON file", nargs=None)
+ARG_ROLE_EXPORT_FMT = Arg(
+    ('-p', '--pretty'),
+    help='Format output JSON file by sorting role names and indenting by 4 spaces',
+    action='store_true',
+)
 
 # info
 ARG_ANONYMIZE = Arg(
@@ -701,10 +833,20 @@ ARG_NAMESPACE = Arg(
     help="Kubernetes Namespace. Default value is `[kubernetes] namespace` in configuration.",
 )
 
+ARG_MIN_PENDING_MINUTES = Arg(
+    ("--min-pending-minutes",),
+    default=30,
+    type=positive_int(allow_zero=False),
+    help=(
+        "Pending pods created before the time interval are to be cleaned up, "
+        "measured in minutes. Default value is 30(m). The minimum value is 5(m)."
+    ),
+)
+
 # jobs check
 ARG_JOB_TYPE_FILTER = Arg(
     ('--job-type',),
-    choices=('BackfillJob', 'LocalTaskJob', 'SchedulerJob'),
+    choices=('BackfillJob', 'LocalTaskJob', 'SchedulerJob', 'TriggererJob'),
     action='store',
     help='The type of job(s) that will be checked.',
 )
@@ -732,6 +874,20 @@ ARG_ALLOW_MULTIPLE = Arg(
 # sync-perm
 ARG_INCLUDE_DAGS = Arg(
     ("--include-dags",), help="If passed, DAG specific permissions will also be synced.", action="store_true"
+)
+
+# triggerer
+ARG_CAPACITY = Arg(
+    ("--capacity",),
+    type=positive_int(allow_zero=False),
+    help="The maximum number of triggers that a Triggerer will run at one time.",
+)
+
+# reserialize
+ARG_CLEAR_ONLY = Arg(
+    ("--clear-only",),
+    action="store_true",
+    help="If passed, serialized DAGs will be cleared but not reserialized.",
 )
 
 ALTERNATIVE_CONN_SPECS_ARGS = [
@@ -768,12 +924,17 @@ class GroupCommand(NamedTuple):
 
 CLICommand = Union[ActionCommand, GroupCommand]
 
-
 DAGS_COMMANDS = (
     ActionCommand(
         name='list',
         help="List all the DAGs",
         func=lazy_load_command('airflow.cli.commands.dag_command.dag_list_dags'),
+        args=(ARG_SUBDIR, ARG_OUTPUT, ARG_VERBOSE),
+    ),
+    ActionCommand(
+        name='list-import-errors',
+        help="List all the DAGs that have import errors",
+        func=lazy_load_command('airflow.cli.commands.dag_command.dag_list_import_errors'),
         args=(ARG_SUBDIR, ARG_OUTPUT, ARG_VERBOSE),
     ),
     ActionCommand(
@@ -878,6 +1039,33 @@ DAGS_COMMANDS = (
         ),
     ),
     ActionCommand(
+        name='show-dependencies',
+        help="Displays DAGs with their dependencies",
+        description=(
+            "The --imgcat option only works in iTerm.\n"
+            "\n"
+            "For more information, see: https://www.iterm2.com/documentation-images.html\n"
+            "\n"
+            "The --save option saves the result to the indicated file.\n"
+            "\n"
+            "The file format is determined by the file extension. "
+            "For more information about supported "
+            "format, see: https://www.graphviz.org/doc/info/output.html\n"
+            "\n"
+            "If you want to create a PNG file then you should execute the following command:\n"
+            "airflow dags show-dependencies --save output.png\n"
+            "\n"
+            "If you want to create a DOT file then you should execute the following command:\n"
+            "airflow dags show-dependencies --save output.dot\n"
+        ),
+        func=lazy_load_command('airflow.cli.commands.dag_command.dag_dependencies_show'),
+        args=(
+            ARG_SUBDIR,
+            ARG_SAVE,
+            ARG_IMGCAT,
+        ),
+    ),
+    ActionCommand(
         name='backfill',
         help="Run subsections of a DAG for a specified date range",
         description=(
@@ -942,6 +1130,17 @@ DAGS_COMMANDS = (
             ARG_SAVE_DAGRUN,
         ),
     ),
+    ActionCommand(
+        name='reserialize',
+        help="Reserialize all DAGs by parsing the DagBag files",
+        description=(
+            "Drop all serialized dags from the metadata DB. This will cause all DAGs to be reserialized "
+            "from the DagBag folder. This can be helpful if your serialized DAGs get out of sync with the "
+            "version of Airflow that you are running."
+        ),
+        func=lazy_load_command('airflow.cli.commands.dag_command.dag_reserialize'),
+        args=(ARG_CLEAR_ONLY,),
+    ),
 )
 TASKS_COMMANDS = (
     ActionCommand(
@@ -974,7 +1173,14 @@ TASKS_COMMANDS = (
         name='state',
         help="Get the status of a task instance",
         func=lazy_load_command('airflow.cli.commands.task_command.task_state'),
-        args=(ARG_DAG_ID, ARG_TASK_ID, ARG_EXECUTION_DATE, ARG_SUBDIR, ARG_VERBOSE),
+        args=(
+            ARG_DAG_ID,
+            ARG_TASK_ID,
+            ARG_EXECUTION_DATE_OR_RUN_ID,
+            ARG_SUBDIR,
+            ARG_VERBOSE,
+            ARG_MAP_INDEX,
+        ),
     ),
     ActionCommand(
         name='failed-deps',
@@ -985,13 +1191,20 @@ TASKS_COMMANDS = (
             "and then run by an executor."
         ),
         func=lazy_load_command('airflow.cli.commands.task_command.task_failed_deps'),
-        args=(ARG_DAG_ID, ARG_TASK_ID, ARG_EXECUTION_DATE, ARG_SUBDIR),
+        args=(ARG_DAG_ID, ARG_TASK_ID, ARG_EXECUTION_DATE_OR_RUN_ID, ARG_SUBDIR, ARG_MAP_INDEX),
     ),
     ActionCommand(
         name='render',
         help="Render a task instance's template(s)",
         func=lazy_load_command('airflow.cli.commands.task_command.task_render'),
-        args=(ARG_DAG_ID, ARG_TASK_ID, ARG_EXECUTION_DATE, ARG_SUBDIR, ARG_VERBOSE),
+        args=(
+            ARG_DAG_ID,
+            ARG_TASK_ID,
+            ARG_EXECUTION_DATE_OR_RUN_ID,
+            ARG_SUBDIR,
+            ARG_VERBOSE,
+            ARG_MAP_INDEX,
+        ),
     ),
     ActionCommand(
         name='run',
@@ -1000,7 +1213,7 @@ TASKS_COMMANDS = (
         args=(
             ARG_DAG_ID,
             ARG_TASK_ID,
-            ARG_EXECUTION_DATE,
+            ARG_EXECUTION_DATE_OR_RUN_ID,
             ARG_SUBDIR,
             ARG_MARK_SUCCESS,
             ARG_FORCE,
@@ -1017,6 +1230,7 @@ TASKS_COMMANDS = (
             ARG_INTERACTIVE,
             ARG_ERROR_FILE,
             ARG_SHUT_DOWN_LOGGING,
+            ARG_MAP_INDEX,
         ),
     ),
     ActionCommand(
@@ -1030,19 +1244,20 @@ TASKS_COMMANDS = (
         args=(
             ARG_DAG_ID,
             ARG_TASK_ID,
-            ARG_EXECUTION_DATE,
+            ARG_EXECUTION_DATE_OR_RUN_ID,
             ARG_SUBDIR,
             ARG_DRY_RUN,
             ARG_TASK_PARAMS,
             ARG_POST_MORTEM,
             ARG_ENV_VARS,
+            ARG_MAP_INDEX,
         ),
     ),
     ActionCommand(
         name='states-for-dag-run',
         help="Get the status of all task instances in a dag run",
         func=lazy_load_command('airflow.cli.commands.task_command.task_states_for_dag_run'),
-        args=(ARG_DAG_ID, ARG_EXECUTION_DATE, ARG_OUTPUT, ARG_VERBOSE),
+        args=(ARG_DAG_ID, ARG_EXECUTION_DATE_OR_RUN_ID, ARG_OUTPUT, ARG_VERBOSE),
     ),
 )
 POOLS_COMMANDS = (
@@ -1145,7 +1360,27 @@ DB_COMMANDS = (
         name='upgrade',
         help="Upgrade the metadata database to latest version",
         func=lazy_load_command('airflow.cli.commands.db_command.upgradedb'),
-        args=(),
+        args=(ARG_VERSION_RANGE, ARG_REVISION_RANGE),
+    ),
+    ActionCommand(
+        name='downgrade',
+        help="Downgrade the schema of the metadata database.",
+        description=(
+            "Downgrade the schema of the metadata database. "
+            "You must provide either `--revision` or `--version`. "
+            "To print but not execute commands, use option `--sql-only`. "
+            "If using options `--from-revision` or `--from-version`, you must also use `--sql-only`, "
+            "because if actually *running* migrations, we should only migrate from the *current* revision."
+        ),
+        func=lazy_load_command('airflow.cli.commands.db_command.downgrade'),
+        args=(
+            ARG_DB_REVISION,
+            ARG_DB_VERSION,
+            ARG_DB_SQL,
+            ARG_YES,
+            ARG_DB_FROM_REVISION,
+            ARG_DB_FROM_VERSION,
+        ),
     ),
     ActionCommand(
         name='shell',
@@ -1158,6 +1393,18 @@ DB_COMMANDS = (
         help="Check if the database can be reached",
         func=lazy_load_command('airflow.cli.commands.db_command.check'),
         args=(),
+    ),
+    ActionCommand(
+        name='clean',
+        help="Purge old records in metastore tables",
+        func=lazy_load_command('airflow.cli.commands.db_command.cleanup_tables'),
+        args=(
+            ARG_DB_TABLES,
+            ARG_DB_DRY_RUN,
+            ARG_DB_CLEANUP_TIMESTAMP,
+            ARG_VERBOSE,
+            ARG_YES,
+        ),
     ),
 )
 CONNECTIONS_COMMANDS = (
@@ -1257,6 +1504,24 @@ PROVIDERS_COMMANDS = (
         func=lazy_load_command('airflow.cli.commands.provider_command.connection_field_behaviours'),
         args=(ARG_OUTPUT, ARG_VERBOSE),
     ),
+    ActionCommand(
+        name='logging',
+        help='Get information about task logging handlers provided',
+        func=lazy_load_command('airflow.cli.commands.provider_command.logging_list'),
+        args=(ARG_OUTPUT, ARG_VERBOSE),
+    ),
+    ActionCommand(
+        name='secrets',
+        help='Get information about secrets backends provided',
+        func=lazy_load_command('airflow.cli.commands.provider_command.secrets_backends_list'),
+        args=(ARG_OUTPUT, ARG_VERBOSE),
+    ),
+    ActionCommand(
+        name='auth',
+        help='Get information about API auth backends provided',
+        func=lazy_load_command('airflow.cli.commands.provider_command.auth_backend_list'),
+        args=(ARG_OUTPUT, ARG_VERBOSE),
+    ),
 )
 
 USERS_COMMANDS = (
@@ -1335,6 +1600,18 @@ ROLES_COMMANDS = (
         func=lazy_load_command('airflow.cli.commands.role_command.roles_create'),
         args=(ARG_ROLES, ARG_VERBOSE),
     ),
+    ActionCommand(
+        name='export',
+        help='Export roles (without permissions) from db to JSON file',
+        func=lazy_load_command('airflow.cli.commands.role_command.roles_export'),
+        args=(ARG_ROLE_EXPORT, ARG_ROLE_EXPORT_FMT, ARG_VERBOSE),
+    ),
+    ActionCommand(
+        name='import',
+        help='Import roles (without permissions) from JSON file to db',
+        func=lazy_load_command('airflow.cli.commands.role_command.roles_import'),
+        args=(ARG_ROLE_IMPORT, ARG_VERBOSE),
+    ),
 )
 
 CELERY_COMMANDS = (
@@ -1380,7 +1657,7 @@ CELERY_COMMANDS = (
         name='stop',
         help="Stop the Celery worker gracefully",
         func=lazy_load_command('airflow.cli.commands.celery_command.stop_worker'),
-        args=(),
+        args=(ARG_PID,),
     ),
 )
 
@@ -1408,10 +1685,10 @@ KUBERNETES_COMMANDS = (
         help=(
             "Clean up Kubernetes pods "
             "(created by KubernetesExecutor/KubernetesPodOperator) "
-            "in evicted/failed/succeeded states"
+            "in evicted/failed/succeeded/pending states"
         ),
         func=lazy_load_command('airflow.cli.commands.kubernetes_command.cleanup_pods'),
-        args=(ARG_NAMESPACE,),
+        args=(ARG_NAMESPACE, ARG_MIN_PENDING_MINUTES),
     ),
     ActionCommand(
         name='generate-dag-yaml',
@@ -1526,6 +1803,19 @@ airflow_commands: List[CLICommand] = [
             '\n'
             '    Example:\n'
             '        pkill -f -USR2 "airflow scheduler"'
+        ),
+    ),
+    ActionCommand(
+        name='triggerer',
+        help="Start a triggerer instance",
+        func=lazy_load_command('airflow.cli.commands.triggerer_command.triggerer'),
+        args=(
+            ARG_PID,
+            ARG_DAEMON,
+            ARG_STDOUT,
+            ARG_STDERR,
+            ARG_LOG_FILE,
+            ARG_CAPACITY,
         ),
     ),
     ActionCommand(
@@ -1647,7 +1937,7 @@ class AirflowHelpFormatter(argparse.HelpFormatter):
     """
 
     def _format_action(self, action: Action):
-        if isinstance(action, argparse._SubParsersAction):  # pylint: disable=protected-access
+        if isinstance(action, argparse._SubParsersAction):
 
             parts = []
             action_header = self._format_action_invocation(action)
@@ -1655,7 +1945,7 @@ class AirflowHelpFormatter(argparse.HelpFormatter):
             parts.append(action_header)
 
             self._indent()
-            subactions = action._get_subactions()  # pylint: disable=protected-access
+            subactions = action._get_subactions()
             action_subcommands, group_subcommands = partition(
                 lambda d: isinstance(ALL_COMMANDS_DICT[d.dest], GroupCommand), subactions
             )
@@ -1709,9 +1999,7 @@ def _sort_args(args: Iterable[Arg]) -> Iterable[Arg]:
     yield from sorted(optional, key=lambda x: get_long_option(x).lower())
 
 
-def _add_command(
-    subparsers: argparse._SubParsersAction, sub: CLICommand  # pylint: disable=protected-access
-) -> None:
+def _add_command(subparsers: argparse._SubParsersAction, sub: CLICommand) -> None:
     sub_proc = subparsers.add_parser(
         sub.name, help=sub.help, description=sub.description or sub.help, epilog=sub.epilog
     )

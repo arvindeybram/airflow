@@ -16,7 +16,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""add unique constraint to conn_id
+"""Add unique constraint to ``conn_id``
 
 Revision ID: 8d48763f6d53
 Revises: 8f966b9c467a
@@ -27,18 +27,21 @@ Create Date: 2020-05-03 16:55:01.834231
 import sqlalchemy as sa
 from alembic import op
 
+from airflow.models.base import COLLATION_ARGS
+
 # revision identifiers, used by Alembic.
 revision = '8d48763f6d53'
 down_revision = '8f966b9c467a'
 branch_labels = None
 depends_on = None
+airflow_version = '2.0.0'
 
 
 def upgrade():
-    """Apply add unique constraint to conn_id and set it as non-nullable"""
+    """Apply Add unique constraint to ``conn_id`` and set it as non-nullable"""
     try:
         with op.batch_alter_table('connection') as batch_op:
-            batch_op.alter_column("conn_id", nullable=False, existing_type=sa.String(250))
+            batch_op.alter_column("conn_id", nullable=False, existing_type=sa.String(250, **COLLATION_ARGS))
             batch_op.create_unique_constraint(constraint_name="unique_conn_id", columns=["conn_id"])
 
     except sa.exc.IntegrityError:
@@ -46,7 +49,7 @@ def upgrade():
 
 
 def downgrade():
-    """Unapply add unique constraint to conn_id and set it as non-nullable"""
+    """Unapply Add unique constraint to ``conn_id`` and set it as non-nullable"""
     with op.batch_alter_table('connection') as batch_op:
         batch_op.drop_constraint(constraint_name="unique_conn_id", type_="unique")
 

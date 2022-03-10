@@ -49,6 +49,7 @@ class DAGSchema(SQLAlchemySchema):
     dag_id = auto_field(dump_only=True)
     root_dag_id = auto_field(dump_only=True)
     is_paused = auto_field()
+    is_active = auto_field(dump_only=True)
     is_subdag = auto_field(dump_only=True)
     fileloc = auto_field(dump_only=True)
     file_token = fields.Method("get_token", dump_only=True)
@@ -78,13 +79,20 @@ class DAGDetailSchema(DAGSchema):
     timezone = TimezoneField()
     catchup = fields.Boolean()
     orientation = fields.String()
-    concurrency = fields.Integer()
+    concurrency = fields.Method("get_concurrency")  # TODO: Remove in Airflow 3.0
+    max_active_tasks = fields.Integer()
     start_date = fields.DateTime()
     dag_run_timeout = fields.Nested(TimeDeltaSchema, attribute="dagrun_timeout")
     doc_md = fields.String()
     default_view = fields.String()
-    params = fields.Dict()
-    tags = fields.Method("get_tags", dump_only=True)
+    params = fields.Method('get_params', dump_only=True)
+    tags = fields.Method("get_tags", dump_only=True)  # type: ignore
+    is_paused = fields.Method("get_is_paused", dump_only=True)
+    is_active = fields.Method("get_is_active", dump_only=True)
+
+    @staticmethod
+    def get_concurrency(obj: DAG):
+        return obj.max_active_tasks
 
     @staticmethod
     def get_tags(obj: DAG):
@@ -100,6 +108,22 @@ class DAGDetailSchema(DAGSchema):
         if not getattr(obj, 'owner', None):
             return []
         return obj.owner.split(",")
+
+    @staticmethod
+    def get_is_paused(obj: DAG):
+        """Checks entry in DAG table to see if this DAG is paused"""
+        return obj.get_is_paused()
+
+    @staticmethod
+    def get_is_active(obj: DAG):
+        """Checks entry in DAG table to see if this DAG is active"""
+        return obj.get_is_active()
+
+    @staticmethod
+    def get_params(obj: DAG):
+        """Get the Params defined in a DAG"""
+        params = obj.params
+        return {k: v.dump() for k, v in params.items()}
 
 
 class DAGCollection(NamedTuple):

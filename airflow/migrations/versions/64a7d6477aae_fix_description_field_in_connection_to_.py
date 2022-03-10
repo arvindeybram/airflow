@@ -16,7 +16,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""fix description field in connection to be text
+"""Fix description field in ``connection`` to be ``text``
 
 Revision ID: 64a7d6477aae
 Revises: f5b5ec089444
@@ -24,19 +24,20 @@ Create Date: 2020-11-25 08:56:11.866607
 
 """
 
-import sqlalchemy as sa  # noqa
-from alembic import op  # noqa
+import sqlalchemy as sa
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = '64a7d6477aae'
 down_revision = '61ec73d9401f'
 branch_labels = None
 depends_on = None
+airflow_version = '2.0.0'
 
 
 def upgrade():
-    """Apply fix description field in connection to be text"""
-    conn = op.get_bind()  # pylint: disable=no-member
+    """Apply Fix description field in ``connection`` to be ``text``"""
+    conn = op.get_bind()
     if conn.dialect.name == "sqlite":
         # in sqlite TEXT and STRING column types are the same
         return
@@ -54,8 +55,8 @@ def upgrade():
 
 
 def downgrade():
-    """Unapply fix description field in connection to be text"""
-    conn = op.get_bind()  # pylint: disable=no-member
+    """Unapply Fix description field in ``connection`` to be ``text``"""
+    conn = op.get_bind()
     if conn.dialect.name == "sqlite":
         # in sqlite TEXT and STRING column types are the same
         return

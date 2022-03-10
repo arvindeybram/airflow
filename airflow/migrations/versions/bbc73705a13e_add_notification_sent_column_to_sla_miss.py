@@ -16,7 +16,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Add notification_sent column to sla_miss
+"""Add ``notification_sent`` column to ``sla_miss`` table
 
 Revision ID: bbc73705a13e
 Revises: 4446e08588
@@ -31,11 +31,12 @@ revision = 'bbc73705a13e'
 down_revision = '4446e08588'
 branch_labels = None
 depends_on = None
+airflow_version = '1.7.0'
 
 
-def upgrade():  # noqa: D103
+def upgrade():
     op.add_column('sla_miss', sa.Column('notification_sent', sa.Boolean, default=False))
 
 
-def downgrade():  # noqa: D103
+def downgrade():
     op.drop_column('sla_miss', 'notification_sent')

@@ -16,7 +16,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""add fields to dag
+"""Add ``description`` and ``default_view`` column to ``dag`` table
 
 Revision ID: c8ffec048a3b
 Revises: 41f5f12752f8
@@ -32,13 +32,14 @@ revision = 'c8ffec048a3b'
 down_revision = '41f5f12752f8'
 branch_labels = None
 depends_on = None
+airflow_version = '1.10.3'
 
 
-def upgrade():  # noqa: D103
+def upgrade():
     op.add_column('dag', sa.Column('description', sa.Text(), nullable=True))
     op.add_column('dag', sa.Column('default_view', sa.String(25), nullable=True))
 
 
-def downgrade():  # noqa: D103
+def downgrade():
     op.drop_column('dag', 'description')
     op.drop_column('dag', 'default_view')

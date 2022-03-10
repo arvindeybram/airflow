@@ -16,7 +16,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Resource based permissions for default FAB views.
+"""Resource based permissions for default ``Flask-AppBuilder`` views
 
 Revision ID: a13f7613ad25
 Revises: e165e7455d70
@@ -33,14 +33,15 @@ revision = 'a13f7613ad25'
 down_revision = 'e165e7455d70'
 branch_labels = None
 depends_on = None
+airflow_version = '2.1.0'
 
 
 mapping = {
     ("PermissionModelView", "can_list"): [
-        (permissions.ACTION_CAN_READ, permissions.RESOURCE_PERMISSION),
+        (permissions.ACTION_CAN_READ, permissions.RESOURCE_ACTION),
     ],
     ("PermissionViewModelView", "can_list"): [
-        (permissions.ACTION_CAN_READ, permissions.RESOURCE_PERMISSION_VIEW),
+        (permissions.ACTION_CAN_READ, permissions.RESOURCE_PERMISSION),
     ],
     ("ResetMyPasswordView", "can_this_form_get"): [
         (permissions.ACTION_CAN_READ, permissions.RESOURCE_MY_PASSWORD),
@@ -76,25 +77,25 @@ mapping = {
         (permissions.ACTION_CAN_CREATE, permissions.RESOURCE_ROLE),
     ],
     ("ViewMenuModelView", "can_list"): [
-        (permissions.ACTION_CAN_READ, permissions.RESOURCE_VIEW_MENU),
+        (permissions.ACTION_CAN_READ, permissions.RESOURCE_RESOURCE),
     ],
     ("UserDBModelView", "can_add"): [
-        (permissions.ACTION_CAN_CREATE, permissions.RESOURCE_VIEW_MENU),
+        (permissions.ACTION_CAN_CREATE, permissions.RESOURCE_RESOURCE),
     ],
     ("UserDBModelView", "can_userinfo"): [
         (permissions.ACTION_CAN_READ, permissions.RESOURCE_MY_PROFILE),
     ],
     ("UserDBModelView", "can_download"): [
-        (permissions.ACTION_CAN_READ, permissions.RESOURCE_VIEW_MENU),
+        (permissions.ACTION_CAN_READ, permissions.RESOURCE_RESOURCE),
     ],
     ("UserDBModelView", "can_show"): [
-        (permissions.ACTION_CAN_READ, permissions.RESOURCE_VIEW_MENU),
+        (permissions.ACTION_CAN_READ, permissions.RESOURCE_RESOURCE),
     ],
     ("UserDBModelView", "can_list"): [
-        (permissions.ACTION_CAN_READ, permissions.RESOURCE_VIEW_MENU),
+        (permissions.ACTION_CAN_READ, permissions.RESOURCE_RESOURCE),
     ],
     ("UserDBModelView", "can_edit"): [
-        (permissions.ACTION_CAN_EDIT, permissions.RESOURCE_VIEW_MENU),
+        (permissions.ACTION_CAN_EDIT, permissions.RESOURCE_RESOURCE),
     ],
     ("UserDBModelView", "resetmypassword"): [
         (permissions.ACTION_CAN_READ, permissions.RESOURCE_MY_PASSWORD),
@@ -106,7 +107,7 @@ mapping = {
         (permissions.ACTION_CAN_EDIT, permissions.RESOURCE_MY_PROFILE),
     ],
     ("UserDBModelView", "can_delete"): [
-        (permissions.ACTION_CAN_DELETE, permissions.RESOURCE_VIEW_MENU),
+        (permissions.ACTION_CAN_DELETE, permissions.RESOURCE_RESOURCE),
     ],
     ("UserInfoEditView", "can_this_form_get"): [
         (permissions.ACTION_CAN_READ, permissions.RESOURCE_MY_PROFILE),
@@ -137,26 +138,53 @@ mapping = {
 
 
 def remap_permissions():
-    """Apply Map Airflow view permissions."""
+    """Apply Map Airflow permissions."""
     appbuilder = create_app(config={'FAB_UPDATE_PERMS': False}).appbuilder
     for old, new in mapping.items():
-        (old_view_name, old_perm_name) = old
-        old_pvm = appbuilder.sm.find_permission_view_menu(old_perm_name, old_view_name)
-        if not old_pvm:
+        (old_resource_name, old_action_name) = old
+        old_permission = appbuilder.sm.get_permission(old_action_name, old_resource_name)
+        if not old_permission:
             continue
-        for new_perm_name, new_view_name in new:
-            new_pvm = appbuilder.sm.add_permission_view_menu(new_perm_name, new_view_name)
+        for new_action_name, new_resource_name in new:
+            new_permission = appbuilder.sm.create_permission(new_action_name, new_resource_name)
             for role in appbuilder.sm.get_all_roles():
-                if appbuilder.sm.exist_permission_on_roles(old_view_name, old_perm_name, [role.id]):
-                    appbuilder.sm.add_permission_role(role, new_pvm)
-                    appbuilder.sm.del_permission_role(role, old_pvm)
-        appbuilder.sm.del_permission_view_menu(old_perm_name, old_view_name)
+                if appbuilder.sm.permission_exists_in_one_or_more_roles(
+                    old_resource_name, old_action_name, [role.id]
+                ):
+                    appbuilder.sm.add_permission_to_role(role, new_permission)
+                    appbuilder.sm.remove_permission_from_role(role, old_permission)
+        appbuilder.sm.delete_permission(old_action_name, old_resource_name)
 
-        if not appbuilder.sm.find_permission(old_perm_name):
+        if not appbuilder.sm.get_action(old_action_name):
             continue
-        view_menus = appbuilder.sm.get_all_view_menu()
-        if not any(appbuilder.sm.find_permission_view_menu(old_perm_name, view.name) for view in view_menus):
-            appbuilder.sm.del_permission(old_perm_name)
+        resources = appbuilder.sm.get_all_resources()
+        if not any(appbuilder.sm.get_permission(old_action_name, resource.name) for resource in resources):
+            appbuilder.sm.delete_action(old_action_name)
+
+
+def undo_remap_permissions():
+    """Unapply Map Airflow permissions"""
+    appbuilder = create_app(config={'FAB_UPDATE_PERMS': False}).appbuilder
+    for old, new in mapping.items():
+        (new_resource_name, new_action_name) = new[0]
+        new_permission = appbuilder.sm.get_permission(new_action_name, new_resource_name)
+        if not new_permission:
+            continue
+        for old_action_name, old_resource_name in old:
+            old_permission = appbuilder.sm.create_permission(old_action_name, old_resource_name)
+            for role in appbuilder.sm.get_all_roles():
+                if appbuilder.sm.permission_exists_in_one_or_more_roles(
+                    new_resource_name, new_action_name, [role.id]
+                ):
+                    appbuilder.sm.add_permission_to_role(role, old_permission)
+                    appbuilder.sm.remove_permission_from_role(role, new_permission)
+        appbuilder.sm.delete_permission(new_action_name, new_resource_name)
+
+        if not appbuilder.sm.get_action(new_action_name):
+            continue
+        resources = appbuilder.sm.get_all_resources()
+        if not any(appbuilder.sm.get_permission(new_action_name, resource.name) for resource in resources):
+            appbuilder.sm.delete_action(new_action_name)
 
 
 def upgrade():
@@ -169,4 +197,7 @@ def upgrade():
 
 def downgrade():
     """Unapply Resource based permissions."""
-    pass
+    log = logging.getLogger()
+    handlers = log.handlers[:]
+    undo_remap_permissions()
+    log.handlers = handlers

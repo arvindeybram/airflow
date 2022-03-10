@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""fix mysql not null constraint
+"""Fix MySQL not null constraint
 
 Revision ID: f23433877c24
 Revises: 05f30312d566
@@ -30,9 +30,10 @@ revision = 'f23433877c24'
 down_revision = '05f30312d566'
 branch_labels = None
 depends_on = None
+airflow_version = '1.10.0'
 
 
-def upgrade():  # noqa: D103
+def upgrade():
     conn = op.get_bind()
     if conn.dialect.name == 'mysql':
         conn.execute("SET time_zone = '+00:00'")
@@ -41,7 +42,7 @@ def upgrade():  # noqa: D103
         op.alter_column('xcom', 'timestamp', existing_type=mysql.TIMESTAMP(fsp=6), nullable=False)
 
 
-def downgrade():  # noqa: D103
+def downgrade():
     conn = op.get_bind()
     if conn.dialect.name == 'mysql':
         conn.execute("SET time_zone = '+00:00'")

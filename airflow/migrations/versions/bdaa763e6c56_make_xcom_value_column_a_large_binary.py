@@ -32,9 +32,10 @@ revision = 'bdaa763e6c56'
 down_revision = 'cc1e65623dc7'
 branch_labels = None
 depends_on = None
+airflow_version = '1.8.2'
 
 
-def upgrade():  # noqa: D103
+def upgrade():
     # There can be data truncation here as LargeBinary can be smaller than the pickle
     # type.
     # use batch_alter_table to support SQLite workaround
@@ -42,7 +43,7 @@ def upgrade():  # noqa: D103
         batch_op.alter_column('value', type_=sa.LargeBinary())
 
 
-def downgrade():  # noqa: D103
+def downgrade():
     # use batch_alter_table to support SQLite workaround
     with op.batch_alter_table("xcom") as batch_op:
         batch_op.alter_column('value', type_=sa.PickleType(pickler=dill))

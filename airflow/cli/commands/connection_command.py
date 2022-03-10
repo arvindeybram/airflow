@@ -28,7 +28,7 @@ from airflow.cli.simple_table import AirflowConsole
 from airflow.exceptions import AirflowNotFoundException
 from airflow.hooks.base import BaseHook
 from airflow.models import Connection
-from airflow.secrets.local_filesystem import _create_connection, load_connections_dict
+from airflow.secrets.local_filesystem import load_connections_dict
 from airflow.utils import cli as cli_utils, yaml
 from airflow.utils.cli import suppress_logs_and_warning
 from airflow.utils.session import create_session
@@ -144,6 +144,7 @@ def connections_export(args):
         connections = session.query(Connection).order_by(Connection.conn_id).all()
         msg = _format_connections(connections, filetype)
         args.file.write(msg)
+        args.file.close()
 
         if _is_stdout(args.file):
             print("Connections successfully exported.", file=sys.stderr)
@@ -154,7 +155,7 @@ def connections_export(args):
 alternative_conn_specs = ['conn_type', 'conn_host', 'conn_login', 'conn_password', 'conn_schema', 'conn_port']
 
 
-@cli_utils.action_logging
+@cli_utils.action_cli
 def connections_add(args):
     """Adds new connection"""
     # Check that the conn_id and conn_uri args were passed to the command:
@@ -221,7 +222,7 @@ def connections_add(args):
             raise SystemExit(msg)
 
 
-@cli_utils.action_logging
+@cli_utils.action_cli
 def connections_delete(args):
     """Deletes connection from DB"""
     with create_session() as session:
@@ -236,9 +237,9 @@ def connections_delete(args):
             print(f"Successfully deleted connection with `conn_id`={to_delete.conn_id}")
 
 
-@cli_utils.action_logging
+@cli_utils.action_cli(check_db=False)
 def connections_import(args):
-    """Imports connections from a given file"""
+    """Imports connections from a file"""
     if os.path.exists(args.file):
         _import_helper(args.file)
     else:
@@ -246,31 +247,14 @@ def connections_import(args):
 
 
 def _import_helper(file_path):
-    """Helps import connections from a file"""
+    """Load connections from a file and save them to the DB. On collision, skip."""
     connections_dict = load_connections_dict(file_path)
     with create_session() as session:
-        for conn_id, conn_values in connections_dict.items():
+        for conn_id, conn in connections_dict.items():
             if session.query(Connection).filter(Connection.conn_id == conn_id).first():
                 print(f'Could not import connection {conn_id}: connection already exists.')
                 continue
 
-            allowed_fields = [
-                'extra',
-                'description',
-                'conn_id',
-                'login',
-                'conn_type',
-                'host',
-                'password',
-                'schema',
-                'port',
-                'uri',
-                'extra_dejson',
-            ]
-            filtered_connection_values = {
-                key: value for key, value in conn_values.items() if key in allowed_fields
-            }
-            connection = _create_connection(conn_id, filtered_connection_values)
-            session.add(connection)
+            session.add(conn)
             session.commit()
             print(f'Imported connection {conn_id}')

@@ -16,7 +16,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Increase length of FAB ab_view_menu.name column
+"""Increase length of ``Flask-AppBuilder`` ``ab_view_menu.name`` column
 
 Revision ID: 03afc6b6f902
 Revises: 92c57b58940d
@@ -26,19 +26,22 @@ Create Date: 2020-11-13 22:21:41.619565
 
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy.engine.reflection import Inspector
+
+from airflow.compat.sqlalchemy import inspect
+from airflow.migrations.db_types import StringID
 
 # revision identifiers, used by Alembic.
 revision = '03afc6b6f902'
 down_revision = '92c57b58940d'
 branch_labels = None
 depends_on = None
+airflow_version = '1.10.13'
 
 
 def upgrade():
-    """Apply Increase length of FAB ab_view_menu.name column"""
+    """Apply Increase length of ``Flask-AppBuilder`` ``ab_view_menu.name`` column"""
     conn = op.get_bind()
-    inspector = Inspector.from_engine(conn)
+    inspector = inspect(conn)
     tables = inspector.get_table_names()
 
     if "ab_view_menu" in tables:
@@ -59,14 +62,17 @@ def upgrade():
             op.execute("PRAGMA foreign_keys=on")
         else:
             op.alter_column(
-                table_name='ab_view_menu', column_name='name', type_=sa.String(length=250), nullable=False
+                table_name='ab_view_menu',
+                column_name='name',
+                type_=StringID(length=250),
+                nullable=False,
             )
 
 
 def downgrade():
-    """Unapply Increase length of FAB ab_view_menu.name column"""
+    """Unapply Increase length of ``Flask-AppBuilder`` ``ab_view_menu.name`` column"""
     conn = op.get_bind()
-    inspector = Inspector.from_engine(conn)
+    inspector = inspect(conn)
     tables = inspector.get_table_names()
     if "ab_view_menu" in tables:
         if conn.dialect.name == "sqlite":

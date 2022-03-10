@@ -16,7 +16,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""add index to taskinstance
+"""Add index to ``task_instance`` table
 
 Revision ID: bf00311e1990
 Revises: dd25f486b8ea
@@ -31,11 +31,12 @@ revision = 'bf00311e1990'
 down_revision = 'dd25f486b8ea'
 branch_labels = None
 depends_on = None
+airflow_version = '1.10.2'
 
 
-def upgrade():  # noqa: D103
+def upgrade():
     op.create_index('ti_dag_date', 'task_instance', ['dag_id', 'execution_date'], unique=False)
 
 
-def downgrade():  # noqa: D103
+def downgrade():
     op.drop_index('ti_dag_date', table_name='task_instance')

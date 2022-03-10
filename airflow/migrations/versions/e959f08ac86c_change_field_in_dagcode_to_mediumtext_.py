@@ -16,7 +16,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Change field in DagCode to MEDIUMTEXT for MySql
+"""Change field in ``DagCode`` to ``MEDIUMTEXT`` for MySql
 
 Revision ID: e959f08ac86c
 Revises: 64a7d6477aae
@@ -31,17 +31,17 @@ revision = 'e959f08ac86c'
 down_revision = '64a7d6477aae'
 branch_labels = None
 depends_on = None
+airflow_version = '2.0.0'
 
 
-def upgrade():  # noqa: D103
-    conn = op.get_bind()  # pylint: disable=no-member
+def upgrade():
+    conn = op.get_bind()
     if conn.dialect.name == "mysql":
         op.alter_column(
             table_name='dag_code', column_name='source_code', type_=mysql.MEDIUMTEXT, nullable=False
         )
 
 
-def downgrade():  # noqa: D103
-    conn = op.get_bind()  # pylint: disable=no-member
-    if conn.dialect.name == "mysql":
-        op.alter_column(table_name='dag_code', column_name='source_code', type_=mysql.TEXT, nullable=False)
+def downgrade():
+    # Do not downgrade to TEXT as it will break data
+    pass

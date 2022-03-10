@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""add max tries column to task instance
+"""Add ``max_tries`` column to ``task_instance``
 
 Revision ID: cc1e65623dc7
 Revises: 127d2bf2dfa7
@@ -26,49 +26,51 @@ Create Date: 2017-06-19 16:53:12.851141
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy import Column, Integer, String
-from sqlalchemy.engine.reflection import Inspector
 from sqlalchemy.ext.declarative import declarative_base
 
 from airflow import settings
+from airflow.compat.sqlalchemy import inspect
 from airflow.models import DagBag
 
 # revision identifiers, used by Alembic.
-from airflow.models.base import COLLATION_ARGS
-
 revision = 'cc1e65623dc7'
 down_revision = '127d2bf2dfa7'
 branch_labels = None
 depends_on = None
+airflow_version = '1.8.2'
 
 Base = declarative_base()
 BATCH_SIZE = 5000
-ID_LEN = 250
 
 
-class TaskInstance(Base):  # noqa: D101  # type: ignore
+class TaskInstance(Base):  # type: ignore
+    """Task Instance class."""
+
     __tablename__ = "task_instance"
 
-    task_id = Column(String(ID_LEN, **COLLATION_ARGS), primary_key=True)
-    dag_id = Column(String(ID_LEN, **COLLATION_ARGS), primary_key=True)
+    task_id = Column(String(), primary_key=True)
+    dag_id = Column(String(), primary_key=True)
     execution_date = Column(sa.DateTime, primary_key=True)
     max_tries = Column(Integer)
     try_number = Column(Integer, default=0)
 
 
-def upgrade():  # noqa: D103
+def upgrade():
     op.add_column('task_instance', sa.Column('max_tries', sa.Integer, server_default="-1"))
     # Check if table task_instance exist before data migration. This check is
     # needed for database that does not create table until migration finishes.
     # Checking task_instance table exists prevent the error of querying
     # non-existing task_instance table.
     connection = op.get_bind()
-    inspector = Inspector.from_engine(connection)
+    inspector = inspect(connection)
     tables = inspector.get_table_names()
 
     if 'task_instance' in tables:
         # Get current session
         sessionmaker = sa.orm.sessionmaker()
         session = sessionmaker(bind=connection)
+        if not bool(session.query(TaskInstance).first()):
+            return
         dagbag = DagBag(settings.DAGS_FOLDER)
         query = session.query(sa.func.count(TaskInstance.max_tries)).filter(TaskInstance.max_tries == -1)
         # Separate db query in batch to prevent loading entire table
@@ -97,10 +99,10 @@ def upgrade():  # noqa: D103
         session.commit()
 
 
-def downgrade():  # noqa: D103
+def downgrade():
     engine = settings.engine
-    if engine.dialect.has_table(engine, 'task_instance'):
-        connection = op.get_bind()
+    connection = op.get_bind()
+    if engine.dialect.has_table(connection, 'task_instance'):
         sessionmaker = sa.orm.sessionmaker()
         session = sessionmaker(bind=connection)
         dagbag = DagBag(settings.DAGS_FOLDER)

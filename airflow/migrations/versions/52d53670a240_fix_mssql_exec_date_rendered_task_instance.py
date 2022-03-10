@@ -32,6 +32,7 @@ revision = '52d53670a240'
 down_revision = '98271e7606e2'
 branch_labels = None
 depends_on = None
+airflow_version = '2.0.0'
 
 TABLE_NAME = 'rendered_task_instance_fields'
 
@@ -44,10 +45,10 @@ def upgrade():
     conn = op.get_bind()
     if conn.dialect.name == "mssql":
         json_type = sa.Text
-        op.drop_table(TABLE_NAME)  # pylint: disable=no-member
+        op.drop_table(TABLE_NAME)
 
         op.create_table(
-            TABLE_NAME,  # pylint: disable=no-member
+            TABLE_NAME,
             sa.Column('dag_id', sa.String(length=250), nullable=False),
             sa.Column('task_id', sa.String(length=250), nullable=False),
             sa.Column('execution_date', mssql.DATETIME2, nullable=False),
@@ -64,10 +65,10 @@ def downgrade():
     conn = op.get_bind()
     if conn.dialect.name == "mssql":
         json_type = sa.Text
-        op.drop_table(TABLE_NAME)  # pylint: disable=no-member
+        op.drop_table(TABLE_NAME)
 
         op.create_table(
-            TABLE_NAME,  # pylint: disable=no-member
+            TABLE_NAME,
             sa.Column('dag_id', sa.String(length=250), nullable=False),
             sa.Column('task_id', sa.String(length=250), nullable=False),
             sa.Column('execution_date', sa.TIMESTAMP, nullable=False),

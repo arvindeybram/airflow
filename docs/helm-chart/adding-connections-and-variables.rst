@@ -35,17 +35,17 @@ to override values under these sections of the ``values.yaml`` file.
 
    secret:
      - envName: "AIRFLOW_CONN_GCP"
-        secretName: "my-airflow-connections"
-        secretKey: "AIRFLOW_CONN_GCP"
-      - envName: "my-env"
-        secretName: "my-secret-name"
-        secretKey: "my-secret-key"
+       secretName: "my-airflow-connections"
+       secretKey: "AIRFLOW_CONN_GCP"
+     - envName: "my-env"
+       secretName: "my-secret-name"
+       secretKey: "my-secret-key"
 
    extraSecrets:
      my-airflow-connections:
        data: |
          AIRFLOW_CONN_GCP: 'base64_encoded_gcp_conn_string'
-     my-secret-name: |
+     my-secret-name:
        stringData: |
          my-secret-key: my-secret
 

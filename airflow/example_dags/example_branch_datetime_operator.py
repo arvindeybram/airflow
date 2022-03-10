@@ -20,21 +20,16 @@
 Example DAG demonstrating the usage of DateTimeBranchOperator with datetime as well as time objects as
 targets.
 """
-import datetime
+import pendulum
 
 from airflow import DAG
 from airflow.operators.datetime import BranchDateTimeOperator
 from airflow.operators.dummy import DummyOperator
-from airflow.utils.dates import days_ago
-
-args = {
-    "owner": "airflow",
-}
 
 dag = DAG(
     dag_id="example_branch_datetime_operator",
-    start_date=days_ago(2),
-    default_args=args,
+    start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
+    catchup=False,
     tags=["example"],
     schedule_interval="@daily",
 )
@@ -47,8 +42,8 @@ cond1 = BranchDateTimeOperator(
     task_id='datetime_branch',
     follow_task_ids_if_true=['date_in_range'],
     follow_task_ids_if_false=['date_outside_range'],
-    target_upper=datetime.datetime(2020, 10, 10, 15, 0, 0),
-    target_lower=datetime.datetime(2020, 10, 10, 14, 0, 0),
+    target_upper=pendulum.datetime(2020, 10, 10, 15, 0, 0),
+    target_lower=pendulum.datetime(2020, 10, 10, 14, 0, 0),
     dag=dag,
 )
 
@@ -59,8 +54,8 @@ cond1 >> [dummy_task_1, dummy_task_2]
 
 dag = DAG(
     dag_id="example_branch_datetime_operator_2",
-    start_date=days_ago(2),
-    default_args=args,
+    start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
+    catchup=False,
     tags=["example"],
     schedule_interval="@daily",
 )
@@ -72,8 +67,8 @@ cond2 = BranchDateTimeOperator(
     task_id='datetime_branch',
     follow_task_ids_if_true=['date_in_range'],
     follow_task_ids_if_false=['date_outside_range'],
-    target_upper=datetime.time(0, 0, 0),
-    target_lower=datetime.time(15, 0, 0),
+    target_upper=pendulum.time(0, 0, 0),
+    target_lower=pendulum.time(15, 0, 0),
     dag=dag,
 )
 

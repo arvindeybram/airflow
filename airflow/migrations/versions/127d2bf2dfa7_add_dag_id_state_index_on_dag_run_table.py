@@ -16,7 +16,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Add dag_id/state index on dag_run table
+"""Add ``dag_id``/``state`` index on ``dag_run`` table
 
 Revision ID: 127d2bf2dfa7
 Revises: 5e7d17757c7a
@@ -30,11 +30,12 @@ revision = '127d2bf2dfa7'
 down_revision = '5e7d17757c7a'
 branch_labels = None
 depends_on = None
+airflow_version = '1.7.1.3'
 
 
-def upgrade():  # noqa: D103
+def upgrade():
     op.create_index('dag_id_state', 'dag_run', ['dag_id', 'state'], unique=False)
 
 
-def downgrade():  # noqa: D103
+def downgrade():
     op.drop_index('dag_id_state', table_name='dag_run')

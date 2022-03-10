@@ -16,7 +16,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""add password column to user
+"""Add ``password`` column to ``user`` table
 
 Revision ID: 561833c1c74b
 Revises: 40e67319e3a9
@@ -31,11 +31,12 @@ revision = '561833c1c74b'
 down_revision = '40e67319e3a9'
 branch_labels = None
 depends_on = None
+airflow_version = '1.6.2'
 
 
-def upgrade():  # noqa: D103
+def upgrade():
     op.add_column('user', sa.Column('password', sa.String(255)))
 
 
-def downgrade():  # noqa: D103
+def downgrade():
     op.drop_column('user', 'password')

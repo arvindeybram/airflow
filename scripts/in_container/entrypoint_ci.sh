@@ -22,6 +22,23 @@ fi
 # shellcheck source=scripts/in_container/_in_container_script_init.sh
 . /opt/airflow/scripts/in_container/_in_container_script_init.sh
 
+# This one is to workaround https://github.com/apache/airflow/issues/17546
+# issue with /usr/lib/<MACHINE>-linux-gnu/libstdc++.so.6: cannot allocate memory in static TLS block
+# We do not yet a more "correct" solution to the problem but in order to avoid raising new issues
+# by users of the prod image, we implement the workaround now.
+# The side effect of this is slightly (in the range of 100s of milliseconds) slower load for any
+# binary started and a little memory used for Heap allocated by initialization of libstdc++
+# This overhead is not happening for binaries that already link dynamically libstdc++
+LD_PRELOAD="/usr/lib/$(uname -m)-linux-gnu/libstdc++.so.6"
+export LD_PRELOAD
+
+if [[ $(uname -m) == "arm64" || $(uname -m) == "aarch64" ]]; then
+    if [[ ${BACKEND} == "mysql" || ${BACKEND} == "mssql" ]]; then
+        echo "${COLOR_RED}ARM platform is not supported for ${BACKEND} backend. Exiting.${COLOR_RESET}"
+        exit 1
+    fi
+fi
+
 # Add "other" and "group" write permission to the tmp folder
 # Note that it will also change permissions in the /tmp folder on the host
 # but this is necessary to enable some of our CLI tools to work without errors
@@ -39,9 +56,6 @@ echo
 echo "Airflow home: ${AIRFLOW_HOME}"
 echo "Airflow sources: ${AIRFLOW_SOURCES}"
 echo "Airflow core SQL connection: ${AIRFLOW__CORE__SQL_ALCHEMY_CONN:=}"
-if [[ -n "${AIRFLOW__CORE__SQL_ENGINE_COLLATION_FOR_IDS=}" ]]; then
-    echo "Airflow collation for IDs: ${AIRFLOW__CORE__SQL_ENGINE_COLLATION_FOR_IDS}"
-fi
 
 echo
 
@@ -55,7 +69,7 @@ else
     export RUN_AIRFLOW_1_10="false"
 fi
 
-if [[ -z ${USE_AIRFLOW_VERSION=} ]]; then
+if [[ ${USE_AIRFLOW_VERSION} == "" ]]; then
     export PYTHONPATH=${AIRFLOW_SOURCES}
     echo
     echo "Using already installed airflow version"
@@ -160,24 +174,26 @@ mkdir -p /usr/lib/google-cloud-sdk/bin
 touch /usr/lib/google-cloud-sdk/bin/gcloud
 ln -s -f /usr/bin/gcloud /usr/lib/google-cloud-sdk/bin/gcloud
 
-# Set up ssh keys
-echo 'yes' | ssh-keygen -t rsa -C your_email@youremail.com -m PEM -P '' -f ~/.ssh/id_rsa \
-    >"${AIRFLOW_HOME}/logs/ssh-keygen.log" 2>&1
+if [[ ${SKIP_SSH_SETUP="false"} == "false" ]]; then
+    # Set up ssh keys
+    echo 'yes' | ssh-keygen -t rsa -C your_email@youremail.com -m PEM -P '' -f ~/.ssh/id_rsa \
+        >"${AIRFLOW_HOME}/logs/ssh-keygen.log" 2>&1
 
-cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
-ln -s -f ~/.ssh/authorized_keys ~/.ssh/authorized_keys2
-chmod 600 ~/.ssh/*
+    cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
+    ln -s -f ~/.ssh/authorized_keys ~/.ssh/authorized_keys2
+    chmod 600 ~/.ssh/*
 
-# SSH Service
-sudo service ssh restart >/dev/null 2>&1
+    # SSH Service
+    sudo service ssh restart >/dev/null 2>&1
 
-# Sometimes the server is not quick enough to load the keys!
-while [[ $(ssh-keyscan -H localhost 2>/dev/null | wc -l) != "3" ]] ; do
-    echo "Not all keys yet loaded by the server"
-    sleep 0.05
-done
+    # Sometimes the server is not quick enough to load the keys!
+    while [[ $(ssh-keyscan -H localhost 2>/dev/null | wc -l) != "3" ]] ; do
+        echo "Not all keys yet loaded by the server"
+        sleep 0.05
+    done
 
-ssh-keyscan -H localhost >> ~/.ssh/known_hosts 2>/dev/null
+    ssh-keyscan -H localhost >> ~/.ssh/known_hosts 2>/dev/null
+fi
 
 # shellcheck source=scripts/in_container/configure_environment.sh
 . "${IN_CONTAINER_DIR}/configure_environment.sh"
@@ -207,18 +223,15 @@ EXTRA_PYTEST_ARGS=(
     "--verbosity=0"
     "--strict-markers"
     "--durations=100"
-    "--cov=airflow/"
-    "--cov-config=.coveragerc"
-    "--cov-report=xml:/files/coverage-${TEST_TYPE}-${BACKEND}.xml"
-    "--color=yes"
     "--maxfail=50"
-    "--pythonwarnings=ignore::DeprecationWarning"
-    "--pythonwarnings=ignore::PendingDeprecationWarning"
+    "--color=yes"
     "--junitxml=${RESULT_LOG_FILE}"
     # timeouts in seconds for individual tests
-    "--setup-timeout=20"
+    "--timeouts-order"
+    "moi"
+    "--setup-timeout=60"
     "--execution-timeout=60"
-    "--teardown-timeout=20"
+    "--teardown-timeout=60"
     # Only display summary for non-expected case
     # f - failed
     # E - error
@@ -239,6 +252,14 @@ if [[ "${TEST_TYPE}" == "Helm" ]]; then
 else
     EXTRA_PYTEST_ARGS+=(
         "--with-db-init"
+    )
+fi
+
+if [[ ${ENABLE_TEST_COVERAGE:="false"} == "true" ]]; then
+    EXTRA_PYTEST_ARGS+=(
+        "--cov=airflow/"
+        "--cov-config=.coveragerc"
+        "--cov-report=xml:/files/coverage-${TEST_TYPE}-${BACKEND}.xml"
     )
 fi
 
@@ -281,11 +302,12 @@ else
         "tests/utils"
     )
     WWW_TESTS=("tests/www")
-    HELM_CHART_TESTS=("chart/tests")
+    HELM_CHART_TESTS=("tests/charts")
     ALL_TESTS=("tests")
     ALL_PRESELECTED_TESTS=(
         "${CLI_TESTS[@]}"
         "${API_TESTS[@]}"
+        "${HELM_CHART_TESTS[@]}"
         "${PROVIDERS_TESTS[@]}"
         "${CORE_TESTS[@]}"
         "${ALWAYS_TESTS[@]}"
@@ -326,9 +348,9 @@ fi
 readonly SELECTED_TESTS CLI_TESTS API_TESTS PROVIDERS_TESTS CORE_TESTS WWW_TESTS \
     ALL_TESTS ALL_PRESELECTED_TESTS
 
-if [[ -n ${RUN_INTEGRATION_TESTS=} ]]; then
+if [[ -n ${LIST_OF_INTEGRATION_TESTS_TO_RUN=} ]]; then
     # Integration tests
-    for INT in ${RUN_INTEGRATION_TESTS}
+    for INT in ${LIST_OF_INTEGRATION_TESTS_TO_RUN}
     do
         EXTRA_PYTEST_ARGS+=("--integration" "${INT}")
     done

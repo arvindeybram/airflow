@@ -16,7 +16,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""create is_encrypted
+"""Add ``is_encrypted`` column in ``connection`` table
 
 Revision ID: 1507a7289a2f
 Revises: e3a246e0dc1
@@ -25,25 +25,27 @@ Create Date: 2015-08-18 18:57:51.927315
 """
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy.engine.reflection import Inspector
+
+from airflow.compat.sqlalchemy import inspect
 
 # revision identifiers, used by Alembic.
 revision = '1507a7289a2f'
 down_revision = 'e3a246e0dc1'
 branch_labels = None
 depends_on = None
+airflow_version = '1.5.0'
 
 connectionhelper = sa.Table(
     'connection', sa.MetaData(), sa.Column('id', sa.Integer, primary_key=True), sa.Column('is_encrypted')
 )
 
 
-def upgrade():  # noqa: D103
+def upgrade():
     # first check if the user already has this done. This should only be
     # true for users who are upgrading from a previous version of Airflow
     # that predates Alembic integration
     conn = op.get_bind()
-    inspector = Inspector.from_engine(conn)
+    inspector = inspect(conn)
 
     # this will only be true if 'connection' already exists in the db,
     # but not if alembic created it in a previous migration
@@ -58,5 +60,5 @@ def upgrade():  # noqa: D103
     conn.execute(connectionhelper.update().values(is_encrypted=False))
 
 
-def downgrade():  # noqa: D103
+def downgrade():
     op.drop_column('connection', 'is_encrypted')

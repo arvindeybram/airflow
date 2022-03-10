@@ -27,27 +27,28 @@ Create Date: 2015-08-18 16:35:00.883495
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy import func
-from sqlalchemy.engine.reflection import Inspector
+
+from airflow.compat.sqlalchemy import inspect
+from airflow.migrations.db_types import StringID
 
 # revision identifiers, used by Alembic.
-from airflow.models.base import COLLATION_ARGS
-
 revision = 'e3a246e0dc1'
 down_revision = None
 branch_labels = None
 depends_on = None
+airflow_version = '1.5.0'
 
 
-def upgrade():  # noqa: D103
+def upgrade():
     conn = op.get_bind()
-    inspector = Inspector.from_engine(conn)
+    inspector = inspect(conn)
     tables = inspector.get_table_names()
 
     if 'connection' not in tables:
         op.create_table(
             'connection',
             sa.Column('id', sa.Integer(), nullable=False),
-            sa.Column('conn_id', sa.String(length=250), nullable=True),
+            sa.Column('conn_id', StringID(), nullable=True),
             sa.Column('conn_type', sa.String(length=500), nullable=True),
             sa.Column('host', sa.String(length=500), nullable=True),
             sa.Column('schema', sa.String(length=500), nullable=True),
@@ -60,7 +61,7 @@ def upgrade():  # noqa: D103
     if 'dag' not in tables:
         op.create_table(
             'dag',
-            sa.Column('dag_id', sa.String(length=250), nullable=False),
+            sa.Column('dag_id', StringID(), nullable=False),
             sa.Column('is_paused', sa.Boolean(), nullable=True),
             sa.Column('is_subdag', sa.Boolean(), nullable=True),
             sa.Column('is_active', sa.Boolean(), nullable=True),
@@ -112,8 +113,8 @@ def upgrade():  # noqa: D103
             'log',
             sa.Column('id', sa.Integer(), nullable=False),
             sa.Column('dttm', sa.DateTime(), nullable=True),
-            sa.Column('dag_id', sa.String(length=250, **COLLATION_ARGS), nullable=True),
-            sa.Column('task_id', sa.String(length=250, **COLLATION_ARGS), nullable=True),
+            sa.Column('dag_id', StringID(), nullable=True),
+            sa.Column('task_id', StringID(), nullable=True),
             sa.Column('event', sa.String(length=30), nullable=True),
             sa.Column('execution_date', sa.DateTime(), nullable=True),
             sa.Column('owner', sa.String(length=500), nullable=True),
@@ -122,8 +123,8 @@ def upgrade():  # noqa: D103
     if 'sla_miss' not in tables:
         op.create_table(
             'sla_miss',
-            sa.Column('task_id', sa.String(length=250, **COLLATION_ARGS), nullable=False),
-            sa.Column('dag_id', sa.String(length=250, **COLLATION_ARGS), nullable=False),
+            sa.Column('task_id', StringID(), nullable=False),
+            sa.Column('dag_id', StringID(), nullable=False),
             sa.Column('execution_date', sa.DateTime(), nullable=False),
             sa.Column('email_sent', sa.Boolean(), nullable=True),
             sa.Column('timestamp', sa.DateTime(), nullable=True),
@@ -134,7 +135,7 @@ def upgrade():  # noqa: D103
         op.create_table(
             'slot_pool',
             sa.Column('id', sa.Integer(), nullable=False),
-            sa.Column('pool', sa.String(length=50), nullable=True),
+            sa.Column('pool', StringID(length=50), nullable=True),
             sa.Column('slots', sa.Integer(), nullable=True),
             sa.Column('description', sa.Text(), nullable=True),
             sa.PrimaryKeyConstraint('id'),
@@ -143,8 +144,8 @@ def upgrade():  # noqa: D103
     if 'task_instance' not in tables:
         op.create_table(
             'task_instance',
-            sa.Column('task_id', sa.String(length=250, **COLLATION_ARGS), nullable=False),
-            sa.Column('dag_id', sa.String(length=250, **COLLATION_ARGS), nullable=False),
+            sa.Column('task_id', StringID(), nullable=False),
+            sa.Column('dag_id', StringID(), nullable=False),
             sa.Column('execution_date', sa.DateTime(), nullable=False),
             sa.Column('start_date', sa.DateTime(), nullable=True),
             sa.Column('end_date', sa.DateTime(), nullable=True),
@@ -169,7 +170,7 @@ def upgrade():  # noqa: D103
         op.create_table(
             'user',
             sa.Column('id', sa.Integer(), nullable=False),
-            sa.Column('username', sa.String(length=250), nullable=True),
+            sa.Column('username', StringID(), nullable=True),
             sa.Column('email', sa.String(length=500), nullable=True),
             sa.PrimaryKeyConstraint('id'),
             sa.UniqueConstraint('username'),
@@ -178,7 +179,7 @@ def upgrade():  # noqa: D103
         op.create_table(
             'variable',
             sa.Column('id', sa.Integer(), nullable=False),
-            sa.Column('key', sa.String(length=250), nullable=True),
+            sa.Column('key', StringID(), nullable=True),
             sa.Column('val', sa.Text(), nullable=True),
             sa.PrimaryKeyConstraint('id'),
             sa.UniqueConstraint('key'),
@@ -211,17 +212,17 @@ def upgrade():  # noqa: D103
         op.create_table(
             'xcom',
             sa.Column('id', sa.Integer(), nullable=False),
-            sa.Column('key', sa.String(length=512, **COLLATION_ARGS), nullable=True),
+            sa.Column('key', StringID(length=512), nullable=True),
             sa.Column('value', sa.PickleType(), nullable=True),
             sa.Column('timestamp', sa.DateTime(), default=func.now(), nullable=False),
             sa.Column('execution_date', sa.DateTime(), nullable=False),
-            sa.Column('task_id', sa.String(length=250, **COLLATION_ARGS), nullable=False),
-            sa.Column('dag_id', sa.String(length=250, **COLLATION_ARGS), nullable=False),
+            sa.Column('task_id', StringID(), nullable=False),
+            sa.Column('dag_id', StringID(), nullable=False),
             sa.PrimaryKeyConstraint('id'),
         )
 
 
-def downgrade():  # noqa: D103
+def downgrade():
     op.drop_table('chart')
     op.drop_table('variable')
     op.drop_table('user')

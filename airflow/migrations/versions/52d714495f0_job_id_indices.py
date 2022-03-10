@@ -16,7 +16,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""job_id indices
+"""Add indices in ``job`` table
 
 Revision ID: 52d714495f0
 Revises: 338e90f54d61
@@ -30,11 +30,12 @@ revision = '52d714495f0'
 down_revision = '338e90f54d61'
 branch_labels = None
 depends_on = None
+airflow_version = '1.5.2'
 
 
-def upgrade():  # noqa: D103
+def upgrade():
     op.create_index('idx_job_state_heartbeat', 'job', ['state', 'latest_heartbeat'], unique=False)
 
 
-def downgrade():  # noqa: D103
+def downgrade():
     op.drop_index('idx_job_state_heartbeat', table_name='job')

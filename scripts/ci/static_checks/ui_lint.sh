@@ -16,7 +16,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-MOUNT_ALL_LOCAL_SOURCES="false"
+export MOUNT_ALL_LOCAL_SOURCES="false"
 
 # shellcheck source=scripts/ci/libraries/_script_init.sh
 . "$( dirname "${BASH_SOURCE[0]}" )/../libraries/_script_init.sh"
@@ -27,5 +27,5 @@ build_images::rebuild_ci_image_if_needed
 
 docker run "${EXTRA_DOCKER_FLAGS[@]}" \
     --entrypoint "/bin/bash"  \
-    "${AIRFLOW_CI_IMAGE}" \
+    "${AIRFLOW_CI_IMAGE_WITH_TAG}" \
     -c 'cd airflow/ui && yarn --frozen-lockfile --non-interactive && yarn run lint "${@}"' "${@#airflow/ui/}"
